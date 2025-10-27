@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JIRA Degrade % 分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-top: 15px;
+            transition: all 0.3s;
+        }
+        
+        .refresh-btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-card h3 {
+            color: #666;
+            font-size: 1em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-card .value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .label {
+            color: #999;
+            font-size: 0.9em;
+        }
+        
+        .chart-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+        
+        .chart-container h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+        
+        .assignee-tables {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .table-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        
+        .table-card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        tr:hover {
+            background: #f5f5f5;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 1.5em;
+        }
+        
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 JIRA Degrade % 分析儀表板</h1>
+            <p>公版 SQA/QC Degrade 問題統計分析</p>
+            <button class="refresh-btn" onclick="refreshData()">🔄 重新載入資料</button>
+            <div id="loadingStatus" style="margin-top: 15px; color: #666;"></div>
+        </div>
+        
+        <div id="loading" class="loading">載入中...</div>
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="content" style="display: none;">
+            <!-- 整體統計 -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Degrade Issues</h3>
+                    <div class="value" id="degradeCount">-</div>
+                    <div class="label">問題總數</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Resolved Issues</h3>
+                    <div class="value" id="resolvedCount">-</div>
+                    <div class="label">解題總數</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Degrade %</h3>
+                    <div class="value" id="percentage">-</div>
+                    <div class="label">整體比例</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressBar"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 每週趨勢圖 -->
+            <div class="chart-container">
+                <h2>📈 每週 Degrade % 趨勢</h2>
+                <div class="chart-wrapper">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 每週數量對比圖 -->
+            <div class="chart-container">
+                <h2>📊 每週 Degrade vs Resolved 數量</h2>
+                <div class="chart-wrapper">
+                    <canvas id="countChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Assignee 分布表格 -->
+            <div class="assignee-tables">
+                <div class="table-card">
+                    <h2>👤 Degrade Issues Assignee 分布</h2>
+                    <table id="degradeAssigneeTable">
+                        <thead>
+                            <tr>
+                                <th>Assignee</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                
+                <div class="table-card">
+                    <h2>👤 Resolved Issues Assignee 分布</h2>
+                    <table id="resolvedAssigneeTable">
+                        <thead>
+                            <tr>
+                                <th>Assignee</th>
+                                <th>Count</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Assignee 圖表 -->
+            <div class="chart-container">
+                <h2>👥 Assignee 分布圖 (Top 10)</h2>
+                <div class="chart-wrapper">
+                    <canvas id="assigneeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let trendChart, countChart, assigneeChart;
+        
+        async function loadData() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('content').style.display = 'none';
+                
+                const response = await fetch('/api/stats');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error || '載入資料失敗');
+                }
+                
+                const data = result.data;
+                
+                // 更新整體統計
+                document.getElementById('degradeCount').textContent = data.overall.degrade_count;
+                document.getElementById('resolvedCount').textContent = data.overall.resolved_count;
+                document.getElementById('percentage').textContent = data.overall.percentage + '%';
+                document.getElementById('progressBar').style.width = Math.min(data.overall.percentage, 100) + '%';
+                
+                // 繪製每週趨勢圖
+                drawTrendChart(data.weekly);
+                
+                // 繪製每週數量對比圖
+                drawCountChart(data.weekly);
+                
+                // 更新 Assignee 表格
+                updateAssigneeTable('degradeAssigneeTable', data.assignees.degrade, data.overall.degrade_count);
+                updateAssigneeTable('resolvedAssigneeTable', data.assignees.resolved, data.overall.resolved_count);
+                
+                // 繪製 Assignee 圖表
+                drawAssigneeChart(data.assignees);
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+                
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = '錯誤: ' + error.message;
+                console.error('載入資料失敗:', error);
+            }
+        }
+        
+        function drawTrendChart(weeklyData) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            // 取最近 20 週的資料
+            const recentData = weeklyData.slice(-20);
+            
+            const labels = recentData.map(d => d.week);
+            const percentages = recentData.map(d => d.percentage);
+            
+            if (trendChart) {
+                trendChart.destroy();
+            }
+            
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Degrade %',
+                        data: percentages,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Degrade %: ' + context.parsed.y.toFixed(2) + '%';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Percentage (%)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Week'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function drawCountChart(weeklyData) {
+            const ctx = document.getElementById('countChart').getContext('2d');
+            
+            // 取最近 20 週的資料
+            const recentData = weeklyData.slice(-20);
+            
+            const labels = recentData.map(d => d.week);
+            const degradeCounts = recentData.map(d => d.degrade_count);
+            const resolvedCounts = recentData.map(d => d.resolved_count);
+            
+            if (countChart) {
+                countChart.destroy();
+            }
+            
+            countChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Degrade Issues',
+                            data: degradeCounts,
+                            backgroundColor: '#ff6b6b',
+                            borderColor: '#ff5252',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Resolved Issues',
+                            data: resolvedCounts,
+                            backgroundColor: '#51cf66',
+                            borderColor: '#40c057',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Week'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function updateAssigneeTable(tableId, assignees, total) {
+            const tbody = document.querySelector(`#${tableId} tbody`);
+            tbody.innerHTML = '';
+            
+            // 排序並取前 20 名
+            const sortedAssignees = Object.entries(assignees)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 20);
+            
+            sortedAssignees.forEach(([name, count]) => {
+                const percentage = ((count / total) * 100).toFixed(2);
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${name}</td>
+                    <td><strong>${count}</strong></td>
+                    <td>${percentage}%</td>
+                `;
+            });
+        }
+        
+        function drawAssigneeChart(assignees) {
+            const ctx = document.getElementById('assigneeChart').getContext('2d');
+            
+            // 取 Top 10
+            const degradeTop10 = Object.entries(assignees.degrade)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+            
+            const resolvedTop10 = Object.entries(assignees.resolved)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+            
+            // 合併所有名字
+            const allNames = new Set([
+                ...degradeTop10.map(x => x[0]),
+                ...resolvedTop10.map(x => x[0])
+            ]);
+            
+            const labels = Array.from(allNames).slice(0, 10);
+            
+            const degradeData = labels.map(name => {
+                const found = degradeTop10.find(x => x[0] === name);
+                return found ? found[1] : 0;
+            });
+            
+            const resolvedData = labels.map(name => {
+                const found = resolvedTop10.find(x => x[0] === name);
+                return found ? found[1] : 0;
+            });
+            
+            if (assigneeChart) {
+                assigneeChart.destroy();
+            }
+            
+            assigneeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Degrade Issues',
+                            data: degradeData,
+                            backgroundColor: '#ff6b6b',
+                            borderColor: '#ff5252',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Resolved Issues',
+                            data: resolvedData,
+                            backgroundColor: '#51cf66',
+                            borderColor: '#40c057',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Assignee'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        async function refreshData() {
+            const btn = document.querySelector('.refresh-btn');
+            const status = document.getElementById('loadingStatus');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ 重新載入中...';
+            status.textContent = '正在從 JIRA 載入最新資料，請稍候...';
+            
+            try {
+                const response = await fetch('/api/refresh');
+                const result = await response.json();
+                
+                if (result.success) {
+                    status.textContent = '✓ 資料重新載入成功！';
+                    setTimeout(() => {
+                        loadData();
+                        status.textContent = '';
+                    }, 1000);
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                status.textContent = '✗ 重新載入失敗: ' + error.message;
+                status.style.color = '#ff6b6b';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 重新載入資料';
+            }
+        }
+        
+        // 頁面載入時自動載入資料
+        window.addEventListener('load', loadData);
+    </script>
+</body>
+</html>
