@@ -579,9 +579,6 @@
                 <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div id="resolvedAssigneeVendorTable"></div>
             </div>
-            
-            <!-- 其他圖表和表格... -->
-            <div id="additionalContent"></div>
         </div>
     </div>
     
@@ -686,9 +683,9 @@
             
             // Assignee 圖表
             drawAssigneeChart('degradeAssigneeInternalChart', data.assignees.degrade.internal, 'Degrade Issues', '#ff6b6b');
-            drawAssigneeChart('degradeAssigneeVendorChart', data.assignees.degrade.vendor, 'Degrade Issues', '#ffa726');
+            drawAssigneeChart('degradeAssigneeVendorChart', data.assignees.degrade.vendor, 'Degrade Issues', '#ff6b6b');
             drawAssigneeChart('resolvedAssigneeInternalChart', data.assignees.resolved.internal, 'Resolved Issues', '#51cf66');
-            drawAssigneeChart('resolvedAssigneeVendorChart', data.assignees.resolved.vendor, 'Resolved Issues', '#74b9ff');
+            drawAssigneeChart('resolvedAssigneeVendorChart', data.assignees.resolved.vendor, 'Resolved Issues', '#51cf66');
             
             // Assignee 表格
             drawAssigneeTable('degradeAssigneeInternalTable', data.assignees.degrade.internal, 'internal', 'degrade');
@@ -791,15 +788,15 @@
                         {
                             label: 'Degrade Issues',
                             data: degradeCounts,
-                            backgroundColor: source === 'internal' ? '#ff6b6b' : '#ffa726',
-                            borderColor: source === 'internal' ? '#ee5a5a' : '#f57c00',
+                            backgroundColor: source === 'internal' ? '#ff6b6b' : '#ff6b6b',
+                            borderColor: source === 'internal' ? '#ee5a5a' : '#ee5a5a',
                             borderWidth: 1
                         },
                         {
                             label: 'Resolved Issues',
                             data: resolvedCounts,
-                            backgroundColor: source === 'internal' ? '#51cf66' : '#74b9ff',
-                            borderColor: source === 'internal' ? '#40c057' : '#0984e3',
+                            backgroundColor: source === 'internal' ? '#51cf66' : '#51cf66',
+                            borderColor: source === 'internal' ? '#40c057' : '#40c057',
                             borderWidth: 1
                         }
                     ]
@@ -873,7 +870,7 @@
             return ISOweekStart;
         }
         
-        // Assignee 圖表
+        // Assignee 圖表（可點擊）
         function drawAssigneeChart(canvasId, assigneeData, label, color) {
             const ctx = document.getElementById(canvasId).getContext('2d');
             
@@ -884,6 +881,12 @@
             
             const names = sortedData.map(d => d[0]);
             const counts = sortedData.map(d => d[1]);
+            
+            // 判斷 source 和 type（從 canvasId 解析）
+            let source = 'internal';
+            let type = 'degrade';
+            if (canvasId.includes('Vendor')) source = 'vendor';
+            if (canvasId.includes('resolved')) type = 'resolved';
             
             if (charts[canvasId]) charts[canvasId].destroy();
             
@@ -903,9 +906,21 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     indexAxis: 'y',
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const assigneeName = names[index];
+                            openAssigneeInJira(assigneeName, source, type);
+                        }
+                    },
                     plugins: {
                         legend: {
                             display: true
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                            }
                         }
                     },
                     scales: {
@@ -919,9 +934,28 @@
                     }
                 }
             });
+            
+            ctx.canvas.style.cursor = 'pointer';
         }
         
-        // Assignee 表格
+        // 開啟 Assignee 的 JIRA
+        function openAssigneeInJira(assigneeName, source, type) {
+            const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+            const filterId = filterIds[type][source];
+            
+            let jql = `filter=${filterId} AND assignee="${assigneeName}"`;
+            if (currentFilters.start_date) {
+                jql += ` AND created >= "${currentFilters.start_date}"`;
+            }
+            if (currentFilters.end_date) {
+                jql += ` AND created <= "${currentFilters.end_date}"`;
+            }
+            
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
+        }
+        
+        // Assignee 表格（Assignee 名稱變成連結）
         function drawAssigneeTable(tableId, assigneeData, source, type) {
             const container = document.getElementById(tableId);
             
@@ -940,7 +974,6 @@
                             <th>Assignee</th>
                             <th>Count</th>
                             <th>Percentage</th>
-                            <th>Link</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -964,10 +997,9 @@
                 html += `
                     <tr>
                         <td>${index + 1}</td>
-                        <td>${name}</td>
+                        <td><a href="${url}" target="_blank" class="jira-link">${name}</a></td>
                         <td>${count}</td>
                         <td>${percentage}%</td>
-                        <td><a href="${url}" target="_blank" class="jira-link">🔗 查看</a></td>
                     </tr>
                 `;
             });
