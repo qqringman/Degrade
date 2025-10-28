@@ -1,6 +1,7 @@
 """
 JIRA Degrade 分析管理模組 - 超快速版本
 使用並行處理和優化的 batch size
+修改：使用 updated 欄位而非 created 欄位
 """
 import os
 import requests
@@ -74,9 +75,8 @@ class JiraDegradeManagerFast:
                     'startAt': start_at,
                     'maxResults': batch_size,
                     # 抓取需要的欄位
-                    # created: 用於 Degrade issues
-                    # resolutiondate: 用於 Resolved issues
-                    'fields': 'key,assignee,created,resolutiondate'
+                    # updated: 用於所有 issues
+                    'fields': 'key,assignee,updated'
                 }
                 
                 response = self._make_request(url, params=params, timeout=60)
@@ -134,10 +134,10 @@ class JiraDegradeManagerFast:
         except Exception as e:
             return "Unknown"
     
-    def analyze_by_week(self, issues: List[Dict[str, Any]], date_field: str = 'created') -> Dict[str, Any]:
+    def analyze_by_week(self, issues: List[Dict[str, Any]], date_field: str = 'updated') -> Dict[str, Any]:
         """
         按週統計 issues - 優化版本
-        使用 created 日期而不是 resolutiondate
+        使用 updated 日期而不是 created
         """
         weekly_stats = defaultdict(lambda: {
             'count': 0,
@@ -257,8 +257,8 @@ def load_all_filters_parallel(jira_configs, filters):
     
     print("\n📊 統計分析中...")
     # 使用任一 manager 做統計
-    degrade_weekly = internal_jira.analyze_by_week(all_degrade)
-    resolved_weekly = internal_jira.analyze_by_week(all_resolved)
+    degrade_weekly = internal_jira.analyze_by_week(all_degrade, date_field='updated')
+    resolved_weekly = internal_jira.analyze_by_week(all_resolved, date_field='updated')
     degrade_assignees = internal_jira.get_assignee_distribution(all_degrade)
     resolved_assignees = internal_jira.get_assignee_distribution(all_resolved)
     

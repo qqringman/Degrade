@@ -7,6 +7,8 @@ JIRA Degrade % 分析系統 - 修復版
 1. 解決合併數量與分開數量不一致的問題
 2. 修正週次日期範圍計算，確保與 JIRA 查詢一致
 3. 匯出 HTML 加入圖表顯示筆數和 Assignee 詳細分布表格
+4. 日期過濾改用 updated 欄位
+5. 圖表週期根據過濾日期動態呈現
 """
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -176,10 +178,11 @@ def get_iso_week_dates(year, week):
     
     return target_monday, target_sunday
 
-def analyze_by_week_with_dates(issues, date_field='created'):
+def analyze_by_week_with_dates(issues, date_field='updated'):
     """
     統計週次分布，並返回每週的起始和結束日期（符合 ISO 8601 標準）
     修正：準確計算週次邊界，包含整天的 issues
+    預設使用 updated 日期
     """
     weekly_stats = {}
     
@@ -248,7 +251,7 @@ def calculate_weekly_percentage(degrade_weekly, resolved_weekly):
     return weekly_stats
 
 def filter_issues(issues, start_date, end_date, owner):
-    """過濾 issues - 使用 created 日期"""
+    """過濾 issues - 使用 updated 日期"""
     filtered = []
     
     # 確保 issues 是列表
@@ -264,16 +267,16 @@ def filter_issues(issues, start_date, end_date, owner):
             
         fields = issue.get('fields', {})
         
-        # 日期過濾 - 使用 created
+        # 日期過濾 - 使用 updated
         if start_date or end_date:
-            created_date = fields.get('created')
-            if created_date:
+            updated_date = fields.get('updated')
+            if updated_date:
                 try:
                     # 解析日期（處理時間部分）
-                    if 'T' in created_date:
-                        issue_date = datetime.fromisoformat(created_date.replace('Z', '+00:00').split('.')[0])
+                    if 'T' in updated_date:
+                        issue_date = datetime.fromisoformat(updated_date.replace('Z', '+00:00').split('.')[0])
                     else:
-                        issue_date = datetime.strptime(created_date[:10], '%Y-%m-%d')
+                        issue_date = datetime.strptime(updated_date[:10], '%Y-%m-%d')
                     
                     if start_date:
                         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
@@ -286,7 +289,7 @@ def filter_issues(issues, start_date, end_date, owner):
                         if issue_date > end_dt:
                             continue
                 except Exception as e:
-                    print(f"⚠️  日期解析錯誤: {e} (issue: {issue.get('key')}, date: {created_date})")
+                    print(f"⚠️  日期解析錯誤: {e} (issue: {issue.get('key')}, date: {updated_date})")
                     pass
         
         # Owner 過濾
@@ -334,7 +337,7 @@ def get_stats():
         print(f"📊 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
         print(f"📊 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         
-        # 過濾資料 - 全部使用 created 日期
+        # 過濾資料 - 全部使用 updated 日期
         filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner)
         filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner)
         
@@ -408,14 +411,14 @@ def get_stats():
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
         
         # ===== 修復問題 2：使用精確的日期時間進行週次統計 =====
-        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
-        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='created')
+        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='updated')
+        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='updated')
         weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
         
-        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='created')
-        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
-        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='created')
-        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='created')
+        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='updated')
+        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='updated')
+        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='updated')
+        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='updated')
         
         # ===== 驗證週次數量一致性 =====
         print(f"\n📊 週次數量驗證:")
@@ -570,12 +573,12 @@ def export_excel():
             
             return ws
         
-        # 定義欄位
+        # 定義欄位 - 使用 updated 日期
         issue_columns = [
             ('Issue Key', lambda i, f: i.get('key', '')),
             ('Assignee', lambda i, f: f.get('assignee', {}).get('displayName', 'Unassigned') if f.get('assignee') else 'Unassigned'),
-            ('Created', lambda i, f: f.get('created', '')[:10] if f.get('created') else ''),
-            ('Week', lambda i, f: f"{datetime.strptime(f.get('created', '')[:10], '%Y-%m-%d').isocalendar()[0]}-W{datetime.strptime(f.get('created', '')[:10], '%Y-%m-%d').isocalendar()[1]:02d}" if f.get('created') else ''),
+            ('Updated', lambda i, f: f.get('updated', '')[:10] if f.get('updated') else ''),
+            ('Week', lambda i, f: f"{datetime.strptime(f.get('updated', '')[:10], '%Y-%m-%d').isocalendar()[0]}-W{datetime.strptime(f.get('updated', '')[:10], '%Y-%m-%d').isocalendar()[1]:02d}" if f.get('updated') else ''),
             ('Source', lambda i, f: i.get('_source', 'unknown').upper())
         ]
         
@@ -682,37 +685,36 @@ def export_html():
             token=JIRA_CONFIG['internal']['token']
         )
         
-        # 統計分析 - 全部使用 created
+        # 統計分析 - 全部使用 updated
         total_degrade = len(filtered_degrade)
         total_resolved = len(filtered_resolved)
         overall_percentage = (total_degrade / total_resolved * 100) if total_resolved > 0 else 0
         
-        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
-        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='created')
+        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='updated')
+        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='updated')
         weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
         
-        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='created')
-        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
-        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='created')
-        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='created')
+        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='updated')
+        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='updated')
+        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='updated')
+        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='updated')
         
         degrade_assignees_internal = manager.get_assignee_distribution(internal_degrade)
         degrade_assignees_vendor = manager.get_assignee_distribution(vendor_degrade)
         resolved_assignees_internal = manager.get_assignee_distribution(internal_resolved)
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
         
-        # 週次趨勢數據（最近 20 週）
-        recent_weekly = weekly_stats[-20:] if len(weekly_stats) > 20 else weekly_stats
-        trend_labels = json.dumps([w['week'] for w in recent_weekly])
-        trend_data = json.dumps([w['percentage'] for w in recent_weekly])
+        # 週次趨勢數據（全部週次，不限制）
+        trend_labels = json.dumps([w['week'] for w in weekly_stats])
+        trend_data = json.dumps([w['percentage'] for w in weekly_stats])
         
         # 週次數量對比數據
-        count_degrade = json.dumps([w['degrade_count'] for w in recent_weekly])
-        count_resolved = json.dumps([w['resolved_count'] for w in recent_weekly])
+        count_degrade = json.dumps([w['degrade_count'] for w in weekly_stats])
+        count_resolved = json.dumps([w['resolved_count'] for w in weekly_stats])
         
-        # 週次分布數據（內部/Vendor）
-        all_weeks_internal = sorted(set(list(degrade_weekly_internal.keys()) + list(resolved_weekly_internal.keys())))[-20:]
-        all_weeks_vendor = sorted(set(list(degrade_weekly_vendor.keys()) + list(resolved_weekly_vendor.keys())))[-20:]
+        # 週次分布數據（內部/Vendor）- 全部週次
+        all_weeks_internal = sorted(set(list(degrade_weekly_internal.keys()) + list(resolved_weekly_internal.keys())))
+        all_weeks_vendor = sorted(set(list(degrade_weekly_vendor.keys()) + list(resolved_weekly_vendor.keys())))
         
         weekly_internal_labels = json.dumps(all_weeks_internal)
         weekly_internal_degrade = json.dumps([degrade_weekly_internal.get(w, {}).get('count', 0) for w in all_weeks_internal])
@@ -811,12 +813,12 @@ def export_html():
             for index, (name, count) in enumerate(sorted_data, 1):
                 percentage = (count / total * 100) if total > 0 else 0
                 
-                # 建立 JIRA 連結
+                # 建立 JIRA 連結 - 使用 updated
                 jql = f'filter={filter_id} AND assignee="{name}"'
                 if start_date:
-                    jql += f' AND created >= "{start_date} 00:00"'
+                    jql += f' AND updated >= "{start_date} 00:00"'
                 if end_date:
-                    jql += f' AND created <= "{end_date} 23:59"'
+                    jql += f' AND updated <= "{end_date} 23:59"'
                 
                 url = f"https://{site}/issues/?jql={quote(jql)}"
                 
@@ -1012,7 +1014,7 @@ def export_html():
     <div class="container">
         <div class="header">
             <h1>📊 JIRA Degrade % 分析報告</h1>
-            <p>公版 SQA/QC Degrade 問題統計分析（完整互動版）</p>
+            <p>公版 SQA/QC Degrade 問題統計分析（使用 updated 日期）</p>
             <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
                 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 圖表顯示筆數: {chart_limit}
             </p>
@@ -1165,7 +1167,7 @@ def export_html():
             const weekStartDate = dateRanges[week].start_date;
             const weekEndDate = dateRanges[week].end_date;
             
-            let jql = `filter=${{filterId}} AND created >= "${{weekStartDate}} 00:00" AND created <= "${{weekEndDate}} 23:59"`;
+            let jql = `filter=${{filterId}} AND updated >= "${{weekStartDate}} 00:00" AND updated <= "${{weekEndDate}} 23:59"`;
             
             if (currentFilters.owner) {{
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
@@ -1185,10 +1187,10 @@ def export_html():
             let jql = `filter=${{filterId}} AND assignee="${{assigneeName}}"`;
             
             if (currentFilters.start_date) {{
-                jql += ` AND created >= "${{currentFilters.start_date}} 00:00"`;
+                jql += ` AND updated >= "${{currentFilters.start_date}} 00:00"`;
             }}
             if (currentFilters.end_date) {{
-                jql += ` AND created <= "${{currentFilters.end_date}} 23:59"`;
+                jql += ` AND updated <= "${{currentFilters.end_date}} 23:59"`;
             }}
             
             console.log(`🔗 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}})`);
@@ -1469,6 +1471,7 @@ if __name__ == '__main__':
     print("   ✅ 解決合併數量與分開數量不一致的問題")
     print("   ✅ 修正週次日期範圍計算，確保與 JIRA 查詢一致")
     print("   ✅ 結束日期使用 23:59:59，包含當天所有時間")
-    print("   ✅ 全部使用 created 日期")
+    print("   ✅ 全部使用 updated 日期")
     print("   ✅ 匯出 HTML 加入圖表顯示筆數和 Assignee 詳細分布表格")
+    print("   ✅ 圖表週期根據過濾日期動態呈現")
     app.run(debug=True, host='0.0.0.0', port=5000)

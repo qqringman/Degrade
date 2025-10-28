@@ -220,6 +220,13 @@
             font-weight: bold;
             color: #667eea;
             margin-bottom: 5px;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        
+        .stat-card .value:hover {
+            color: #764ba2;
+            text-decoration: underline;
         }
         
         .stat-card .sub-stats {
@@ -239,6 +246,13 @@
             font-size: 1.2em;
             font-weight: bold;
             color: #667eea;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        
+        .stat-card .sub-stat .value:hover {
+            color: #764ba2;
+            text-decoration: underline;
         }
         
         /* 圖表容器 */
@@ -425,7 +439,7 @@
                 </div>
             </div>
             
-            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（全部使用 created 日期）</p>
+            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（全部使用 updated 日期）</p>
             
             <div class="cache-indicator" id="cacheIndicator">
                 <div class="cache-dot"></div>
@@ -486,31 +500,31 @@
             <div class="stats-grid">
                 <div class="stat-card">
                     <h3>Degrade Issues</h3>
-                    <div class="value" id="degradeCount">-</div>
+                    <div class="value" id="degradeCount" onclick="openFilterInJira('degrade', 'all')">-</div>
                     <div class="label">問題總數</div>
                     <div class="sub-stats">
                         <div class="sub-stat">
                             <div class="label">內部</div>
-                            <div class="value" id="degradeCountInternal">-</div>
+                            <div class="value" id="degradeCountInternal" onclick="openFilterInJira('degrade', 'internal')">-</div>
                         </div>
                         <div class="sub-stat">
                             <div class="label">Vendor</div>
-                            <div class="value" id="degradeCountVendor">-</div>
+                            <div class="value" id="degradeCountVendor" onclick="openFilterInJira('degrade', 'vendor')">-</div>
                         </div>
                     </div>
                 </div>
                 <div class="stat-card">
                     <h3>Resolved Issues</h3>
-                    <div class="value" id="resolvedCount">-</div>
+                    <div class="value" id="resolvedCount" onclick="openFilterInJira('resolved', 'all')">-</div>
                     <div class="label">解題總數</div>
                     <div class="sub-stats">
                         <div class="sub-stat">
                             <div class="label">內部</div>
-                            <div class="value" id="resolvedCountInternal">-</div>
+                            <div class="value" id="resolvedCountInternal" onclick="openFilterInJira('resolved', 'internal')">-</div>
                         </div>
                         <div class="sub-stat">
                             <div class="label">Vendor</div>
-                            <div class="value" id="resolvedCountVendor">-</div>
+                            <div class="value" id="resolvedCountVendor" onclick="openFilterInJira('resolved', 'vendor')">-</div>
                         </div>
                     </div>
                 </div>
@@ -656,6 +670,75 @@
                 drawAssigneeTable('degradeAssigneeVendorTable', cachedData.assignees.degrade.vendor, 'vendor', 'degrade');
                 drawAssigneeTable('resolvedAssigneeInternalTable', cachedData.assignees.resolved.internal, 'internal', 'resolved');
                 drawAssigneeTable('resolvedAssigneeVendorTable', cachedData.assignees.resolved.vendor, 'vendor', 'resolved');
+            }
+        }
+        
+        // ===== 新增：打開 Filter 的 JIRA 連結 =====
+        function openFilterInJira(type, source) {
+            if (!jiraSites || !filterIds) {
+                alert('JIRA 設定尚未載入，請稍候');
+                return;
+            }
+            
+            let jql = '';
+            
+            if (source === 'all') {
+                // 合併內部和 Vendor 的 filter（使用 OR）
+                const internalFilterId = filterIds[type]['internal'];
+                const vendorFilterId = filterIds[type]['vendor'];
+                const internalSite = jiraSites.internal;
+                const vendorSite = jiraSites.vendor;
+                
+                // 因為兩個 JIRA 在不同的 site，我們只能打開其中一個
+                // 這裡優先打開內部 JIRA，並提示使用者
+                jql = `filter=${internalFilterId}`;
+                
+                if (currentFilters.start_date) {
+                    jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
+                }
+                if (currentFilters.end_date) {
+                    jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+                }
+                if (currentFilters.owner) {
+                    jql += ` AND assignee="${currentFilters.owner}"`;
+                }
+                
+                const url = `https://${internalSite}/issues/?jql=${encodeURIComponent(jql)}`;
+                window.open(url, '_blank');
+                
+                // 同時打開 Vendor JIRA
+                let vendorJql = `filter=${vendorFilterId}`;
+                if (currentFilters.start_date) {
+                    vendorJql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
+                }
+                if (currentFilters.end_date) {
+                    vendorJql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+                }
+                if (currentFilters.owner) {
+                    vendorJql += ` AND assignee="${currentFilters.owner}"`;
+                }
+                const vendorUrl = `https://${vendorSite}/issues/?jql=${encodeURIComponent(vendorJql)}`;
+                setTimeout(() => window.open(vendorUrl, '_blank'), 500);
+                
+            } else {
+                // 單一來源（internal 或 vendor）
+                const site = jiraSites[source];
+                const filterId = filterIds[type][source];
+                
+                jql = `filter=${filterId}`;
+                
+                if (currentFilters.start_date) {
+                    jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
+                }
+                if (currentFilters.end_date) {
+                    jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+                }
+                if (currentFilters.owner) {
+                    jql += ` AND assignee="${currentFilters.owner}"`;
+                }
+                
+                const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+                window.open(url, '_blank');
             }
         }
         
@@ -811,20 +894,19 @@
             drawAssigneeTable('resolvedAssigneeVendorTable', data.assignees.resolved.vendor, 'vendor', 'resolved');
         }
         
-        // 趨勢圖
+        // 趨勢圖 - 移除 slice(-20) 限制，顯示所有週次
         function drawTrendChart(weeklyData) {
             const ctx = document.getElementById('trendChart').getContext('2d');
-            const recentData = weeklyData.slice(-20);
             
             if (charts.trendChart) charts.trendChart.destroy();
             
             charts.trendChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: recentData.map(d => d.week),
+                    labels: weeklyData.map(d => d.week),
                     datasets: [{
                         label: 'Degrade %',
-                        data: recentData.map(d => d.percentage),
+                        data: weeklyData.map(d => d.percentage),
                         borderColor: '#667eea',
                         backgroundColor: 'rgba(102, 126, 234, 0.1)',
                         borderWidth: 3,
@@ -850,26 +932,25 @@
             });
         }
         
-        // 數量圖
+        // 數量圖 - 移除 slice(-20) 限制，顯示所有週次
         function drawCountChart(weeklyData) {
             const ctx = document.getElementById('countChart').getContext('2d');
-            const recentData = weeklyData.slice(-20);
             
             if (charts.countChart) charts.countChart.destroy();
             
             charts.countChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: recentData.map(d => d.week),
+                    labels: weeklyData.map(d => d.week),
                     datasets: [
                         {
                             label: 'Degrade Issues',
-                            data: recentData.map(d => d.degrade_count),
+                            data: weeklyData.map(d => d.degrade_count),
                             backgroundColor: '#ff6b6b'
                         },
                         {
                             label: 'Resolved Issues',
-                            data: recentData.map(d => d.resolved_count),
+                            data: weeklyData.map(d => d.resolved_count),
                             backgroundColor: '#51cf66'
                         }
                     ]
@@ -881,16 +962,16 @@
             });
         }
         
-        // 週次 Degrade 分布圖（可點擊，包含 Degrade 和 Resolved）
+        // 週次 Degrade 分布圖（可點擊，包含 Degrade 和 Resolved）- 移除 slice(-20) 限制
         function drawWeeklyDegradeChart(canvasId, degradeWeeklyData, resolvedWeeklyData, source, label) {
             const ctx = document.getElementById(canvasId).getContext('2d');
             
-            // 合併所有週次
+            // 合併所有週次，不限制數量
             const allWeeks = new Set([
                 ...Object.keys(degradeWeeklyData),
                 ...Object.keys(resolvedWeeklyData)
             ]);
-            const weeks = Array.from(allWeeks).sort().slice(-20);
+            const weeks = Array.from(allWeeks).sort();
             
             const degradeCounts = weeks.map(w => degradeWeeklyData[w]?.count || 0);
             const resolvedCounts = weeks.map(w => resolvedWeeklyData[w]?.count || 0);
@@ -973,8 +1054,8 @@
             const weekStartDate = dateRanges[week].start_date;
             const weekEndDate = dateRanges[week].end_date;
             
-            // ✅ 手動添加時間：開始 00:00，結束 23:59
-            let jql = `filter=${filterId} AND created >= "${weekStartDate} 00:00" AND created <= "${weekEndDate} 23:59"`;
+            // ✅ 使用 updated 欄位，手動添加時間：開始 00:00，結束 23:59
+            let jql = `filter=${filterId} AND updated >= "${weekStartDate} 00:00" AND updated <= "${weekEndDate} 23:59"`;
             
             if (currentFilters.owner) {
                 jql += ` AND assignee="${currentFilters.owner}"`;
@@ -1072,20 +1153,20 @@
             ctx.canvas.style.cursor = 'pointer';
         }
         
-        // 開啟 Assignee 的 JIRA - 全部使用 created
+        // 開啟 Assignee 的 JIRA - 全部使用 updated
         function openAssigneeInJira(assigneeName, source, type) {
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
-            // 建立 JQL - 與後端過濾邏輯完全一致，使用 created
+            // 建立 JQL - 與後端過濾邏輯完全一致，使用 updated
             let jql = `filter=${filterId} AND assignee="${assigneeName}"`;
             
-            // 添加日期過濾（與後端一致）- 使用 created，修改為絕對日期時間格式
+            // 添加日期過濾（與後端一致）- 使用 updated，修改為絕對日期時間格式
             if (currentFilters.start_date) {
-                jql += ` AND created >= "${currentFilters.start_date} 00:00"`;
+                jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
             }
             if (currentFilters.end_date) {
-                jql += ` AND created <= "${currentFilters.end_date} 23:59"`;
+                jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
             }
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
@@ -1119,15 +1200,15 @@
             sortedData.forEach(([name, count], index) => {
                 const percentage = (count / total * 100).toFixed(2);
                 
-                // 建立 JIRA 連結 - 與點擊事件使用相同的邏輯，使用 created，修改為絕對日期時間格式
+                // 建立 JIRA 連結 - 與點擊事件使用相同的邏輯，使用 updated，修改為絕對日期時間格式
                 const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
                 const filterId = filterIds[type][source];
                 let jql = `filter=${filterId} AND assignee="${name}"`;
                 if (currentFilters.start_date) {
-                    jql += ` AND created >= "${currentFilters.start_date} 00:00"`;
+                    jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
                 }
                 if (currentFilters.end_date) {
-                    jql += ` AND created <= "${currentFilters.end_date} 23:59"`;
+                    jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
                 }
                 const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
                 
