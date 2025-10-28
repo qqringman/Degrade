@@ -37,18 +37,35 @@
 pip install -r requirements.txt
 ```
 
-2. 設定環境變數（或直接在 app.py 中修改）：
-```bash
-export JIRA_TOKEN=''
-export JIRA_SITE='jira.realtek.com'
-export JIRA_USER='vince_lin'
-export JIRA_PASSWORD='Amon100!'
+2. 設定環境變數：
 
-export VENDOR_JIRA_TOKEN=''
-export VENDOR_JIRA_SITE='vendorjira.realtek.com'
-export VENDOR_JIRA_USER='vince_lin'
-export VENDOR_JIRA_PASSWORD='Amon100!'
+**方法 A: 使用 .env 文件（推薦）**
+```bash
+# 複製範例文件
+cp .env.example .env
+
+# 編輯 .env 文件，填入你的真實 JIRA 帳號資訊
+# 使用任何文字編輯器打開 .env
+nano .env  # 或 vim .env 或 code .env
 ```
+
+**方法 B: 直接設定環境變數**
+```bash
+export JIRA_TOKEN='your_token_here'
+export JIRA_SITE='jira.realtek.com'
+export JIRA_USER='your_username'
+export JIRA_PASSWORD='your_password'
+
+export VENDOR_JIRA_TOKEN='your_vendor_token_here'
+export VENDOR_JIRA_SITE='vendorjira.realtek.com'
+export VENDOR_JIRA_USER='your_username'
+export VENDOR_JIRA_PASSWORD='your_password'
+```
+
+**⚠️ 重要提醒：**
+- **切勿**將 `.env` 文件提交到 Git！
+- `.env` 文件已加入 `.gitignore`
+- 只提交 `.env.example` 作為範例
 
 ## 使用方式
 

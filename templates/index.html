@@ -68,6 +68,74 @@
             transform: none;
         }
         
+        /* 過濾器面板樣式 */
+        .filter-panel {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: flex-end;
+            justify-content: center;
+        }
+        
+        .filter-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .filter-item label {
+            font-size: 0.9em;
+            color: #666;
+            font-weight: 600;
+        }
+        
+        .date-input, .owner-select {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.95em;
+            min-width: 150px;
+            transition: border-color 0.3s;
+        }
+        
+        .date-input:focus, .owner-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .filter-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+        
+        .filter-btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        .reset-btn {
+            background: #6c757d;
+        }
+        
+        .reset-btn:hover {
+            background: #5a6268;
+        }
+        
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -169,6 +237,27 @@
             background: #f5f5f5;
         }
         
+        .jira-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .jira-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        .jira-link::after {
+            content: '🔗';
+            font-size: 0.8em;
+            opacity: 0.6;
+        }
+        
         .loading {
             text-align: center;
             padding: 50px;
@@ -206,6 +295,31 @@
         <div class="header">
             <h1>📊 JIRA Degrade % 分析儀表板</h1>
             <p>公版 SQA/QC Degrade 問題統計分析</p>
+            
+            <!-- 過濾器控制面板 -->
+            <div class="filter-panel">
+                <div class="filter-row">
+                    <div class="filter-item">
+                        <label for="startDate">開始日期：</label>
+                        <input type="date" id="startDate" class="date-input">
+                    </div>
+                    <div class="filter-item">
+                        <label for="endDate">結束日期：</label>
+                        <input type="date" id="endDate" class="date-input">
+                    </div>
+                    <div class="filter-item">
+                        <label for="ownerFilter">Assignee：</label>
+                        <select id="ownerFilter" class="owner-select">
+                            <option value="">全部</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <button class="filter-btn" onclick="applyFilters()">🔍 套用過濾</button>
+                        <button class="filter-btn reset-btn" onclick="resetFilters()">🔄 重置</button>
+                    </div>
+                </div>
+            </div>
+            
             <button class="refresh-btn" onclick="refreshData()">🔄 重新載入資料</button>
             <div id="loadingStatus" style="margin-top: 15px; color: #666;"></div>
         </div>
@@ -295,14 +409,27 @@
     
     <script>
         let trendChart, countChart, assigneeChart;
+        let jiraSites = {};
+        let currentFilters = {
+            start_date: '',
+            end_date: '',
+            owner: ''
+        };
         
-        async function loadData() {
+        async function loadData(filters = {}) {
             try {
                 document.getElementById('loading').style.display = 'block';
                 document.getElementById('error').style.display = 'none';
                 document.getElementById('content').style.display = 'none';
                 
-                const response = await fetch('/api/stats');
+                // 建立查詢參數
+                const params = new URLSearchParams();
+                if (filters.start_date) params.append('start_date', filters.start_date);
+                if (filters.end_date) params.append('end_date', filters.end_date);
+                if (filters.owner) params.append('owner', filters.owner);
+                
+                const url = '/api/stats' + (params.toString() ? '?' + params.toString() : '');
+                const response = await fetch(url);
                 const result = await response.json();
                 
                 if (!result.success) {
@@ -310,6 +437,12 @@
                 }
                 
                 const data = result.data;
+                jiraSites = data.jira_sites || {};
+                
+                // 填充 owner 下拉選單（僅第一次載入）
+                if (data.all_owners && !filters.owner) {
+                    populateOwnerFilter(data.all_owners);
+                }
                 
                 // 更新整體統計
                 document.getElementById('degradeCount').textContent = data.overall.degrade_count;
@@ -323,9 +456,9 @@
                 // 繪製每週數量對比圖
                 drawCountChart(data.weekly);
                 
-                // 更新 Assignee 表格
-                updateAssigneeTable('degradeAssigneeTable', data.assignees.degrade, data.overall.degrade_count);
-                updateAssigneeTable('resolvedAssigneeTable', data.assignees.resolved, data.overall.resolved_count);
+                // 更新 Assignee 表格（加入 JIRA 連結）
+                updateAssigneeTable('degradeAssigneeTable', data.assignees.degrade, data.overall.degrade_count, 'degrade');
+                updateAssigneeTable('resolvedAssigneeTable', data.assignees.resolved, data.overall.resolved_count, 'resolved');
                 
                 // 繪製 Assignee 圖表
                 drawAssigneeChart(data.assignees);
@@ -339,6 +472,71 @@
                 document.getElementById('error').textContent = '錯誤: ' + error.message;
                 console.error('載入資料失敗:', error);
             }
+        }
+        
+        function populateOwnerFilter(owners) {
+            const select = document.getElementById('ownerFilter');
+            // 清空現有選項（除了"全部"）
+            select.innerHTML = '<option value="">全部</option>';
+            
+            owners.forEach(owner => {
+                const option = document.createElement('option');
+                option.value = owner;
+                option.textContent = owner;
+                select.appendChild(option);
+            });
+        }
+        
+        function applyFilters() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const owner = document.getElementById('ownerFilter').value;
+            
+            currentFilters = {
+                start_date: startDate,
+                end_date: endDate,
+                owner: owner
+            };
+            
+            loadData(currentFilters);
+        }
+        
+        function resetFilters() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('ownerFilter').value = '';
+            
+            currentFilters = {
+                start_date: '',
+                end_date: '',
+                owner: ''
+            };
+            
+            loadData();
+        }
+        
+        function createJiraSearchUrl(site, assignee, type) {
+            // 建立 JIRA 搜尋連結
+            const filterMap = {
+                'degrade': {
+                    'internal': '64959',
+                    'vendor': '22062'
+                },
+                'resolved': {
+                    'internal': '64958',
+                    'vendor': '23916'
+                }
+            };
+            
+            const siteType = site.includes('vendorjira') ? 'vendor' : 'internal';
+            const filterId = filterMap[type][siteType];
+            
+            let jql = `filter=${filterId}`;
+            if (assignee && assignee !== 'Unassigned') {
+                jql += ` AND assignee="${assignee}"`;
+            }
+            
+            return `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
         }
         
         function drawTrendChart(weeklyData) {
@@ -365,7 +563,9 @@
                         backgroundColor: 'rgba(102, 126, 234, 0.1)',
                         borderWidth: 3,
                         fill: true,
-                        tension: 0.4
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 7
                     }]
                 },
                 options: {
@@ -382,6 +582,15 @@
                             callbacks: {
                                 label: function(context) {
                                     return 'Degrade %: ' + context.parsed.y.toFixed(2) + '%';
+                                },
+                                afterBody: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const weekData = recentData[index];
+                                    return [
+                                        '',
+                                        `Degrade: ${weekData.degrade_count}`,
+                                        `Resolved: ${weekData.resolved_count}`
+                                    ];
                                 }
                             }
                         }
@@ -455,7 +664,17 @@
                         },
                         tooltip: {
                             mode: 'index',
-                            intersect: false
+                            intersect: false,
+                            callbacks: {
+                                afterBody: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const weekData = recentData[index];
+                                    const percentage = weekData.resolved_count > 0 
+                                        ? ((weekData.degrade_count / weekData.resolved_count) * 100).toFixed(2)
+                                        : 0;
+                                    return ['', `Degrade %: ${percentage}%`];
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -477,7 +696,7 @@
             });
         }
         
-        function updateAssigneeTable(tableId, assignees, total) {
+        function updateAssigneeTable(tableId, assignees, total, type) {
             const tbody = document.querySelector(`#${tableId} tbody`);
             tbody.innerHTML = '';
             
@@ -489,8 +708,17 @@
             sortedAssignees.forEach(([name, count]) => {
                 const percentage = ((count / total) * 100).toFixed(2);
                 const row = tbody.insertRow();
+                
+                // 決定使用哪個 JIRA site（簡化：使用 vendor site）
+                const site = jiraSites.vendor || 'vendorjira.realtek.com';
+                const jiraUrl = createJiraSearchUrl(site, name, type);
+                
                 row.innerHTML = `
-                    <td>${name}</td>
+                    <td>
+                        <a href="${jiraUrl}" target="_blank" class="jira-link" title="在 JIRA 中查看 ${name} 的 issues">
+                            ${name}
+                        </a>
+                    </td>
                     <td><strong>${count}</strong></td>
                     <td>${percentage}%</td>
                 `;
@@ -555,6 +783,19 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const element = elements[0];
+                            const assigneeName = labels[element.index];
+                            const datasetLabel = assigneeChart.data.datasets[element.datasetIndex].label;
+                            const type = datasetLabel.includes('Degrade') ? 'degrade' : 'resolved';
+                            
+                            // 跳轉到 JIRA
+                            const site = jiraSites.vendor || 'vendorjira.realtek.com';
+                            const url = createJiraSearchUrl(site, assigneeName, type);
+                            window.open(url, '_blank');
+                        }
+                    },
                     plugins: {
                         legend: {
                             display: true,
@@ -562,7 +803,12 @@
                         },
                         tooltip: {
                             mode: 'index',
-                            intersect: false
+                            intersect: false,
+                            callbacks: {
+                                afterBody: function(context) {
+                                    return ['', '💡 點擊圖表可跳轉到 JIRA'];
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -576,12 +822,15 @@
                         x: {
                             title: {
                                 display: true,
-                                text: 'Assignee'
+                                text: 'Assignee (點擊可跳轉到 JIRA)'
                             }
                         }
                     }
                 }
             });
+            
+            // 改變滑鼠游標樣式
+            ctx.canvas.style.cursor = 'pointer';
         }
         
         async function refreshData() {
@@ -599,7 +848,8 @@
                 if (result.success) {
                     status.textContent = '✓ 資料重新載入成功！';
                     setTimeout(() => {
-                        loadData();
+                        // 使用當前的過濾條件重新載入
+                        loadData(currentFilters);
                         status.textContent = '';
                     }, 1000);
                 } else {
@@ -615,7 +865,18 @@
         }
         
         // 頁面載入時自動載入資料
-        window.addEventListener('load', loadData);
+        window.addEventListener('load', () => {
+            loadData();
+            
+            // 設定預設日期範圍（最近一年）
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setFullYear(startDate.getFullYear() - 1);
+            
+            // 格式化為 YYYY-MM-DD
+            document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+            document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+        });
     </script>
 </body>
 </html>
