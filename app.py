@@ -2,12 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-JIRA Degrade % 分析系統 - 增強版
-新增功能：
-1. 週次圖表（內部/Vendor 分開）
-2. 匯出 Excel（多頁籤）
-3. 匯出 HTML（靜態）
-4. UI 美化 + 載入動畫
+JIRA Degrade % 分析系統 - 修復版
+修復內容：
+1. 解決合併數量與分開數量不一致的問題
+2. 修正週次日期範圍計算，確保與 JIRA 查詢一致
 """
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -164,9 +162,7 @@ def get_data():
 def get_iso_week_dates(year, week):
     """
     根據 ISO 8601 標準計算指定年份和週次的起始和結束日期
-    ISO 週次規則：
-    - 每週從星期一開始，星期日結束
-    - 一年的第一週是包含該年第一個星期四的那一週
+    修正：結束日期使用 23:59:59，確保包含當天所有時間
     """
     # 找到該年的第一天
     jan_4 = datetime(year, 1, 4)  # ISO 規則：包含 1 月 4 日的週就是第一週
@@ -174,13 +170,16 @@ def get_iso_week_dates(year, week):
     week_1_monday = jan_4 - timedelta(days=jan_4.weekday())
     # 計算目標週的星期一
     target_monday = week_1_monday + timedelta(weeks=week - 1)
-    # 計算星期日
-    target_sunday = target_monday + timedelta(days=6)
+    # 計算星期日（設定為 23:59:59）
+    target_sunday = target_monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
     
     return target_monday, target_sunday
 
 def analyze_by_week_with_dates(issues, date_field='created'):
-    """統計週次分布，並返回每週的起始和結束日期（符合 ISO 8601 標準）"""
+    """
+    統計週次分布，並返回每週的起始和結束日期（符合 ISO 8601 標準）
+    修正：準確計算週次邊界，包含整天的 issues
+    """
     weekly_stats = {}
     
     for issue in issues:
@@ -191,7 +190,14 @@ def analyze_by_week_with_dates(issues, date_field='created'):
             continue
         
         try:
-            issue_date = datetime.strptime(date_str[:10], '%Y-%m-%d')
+            # 解析日期（可能包含時間）
+            if 'T' in date_str:
+                # 完整的 ISO 格式：2025-08-10T14:30:00.000+0800
+                issue_date = datetime.fromisoformat(date_str.replace('Z', '+00:00').split('.')[0])
+            else:
+                # 只有日期：2025-08-10
+                issue_date = datetime.strptime(date_str[:10], '%Y-%m-%d')
+            
             # 計算 ISO 週次
             iso_calendar = issue_date.isocalendar()
             iso_year = iso_calendar[0]
@@ -206,14 +212,17 @@ def analyze_by_week_with_dates(issues, date_field='created'):
                     'count': 0,
                     'issues': [],
                     'start_date': week_start.strftime('%Y-%m-%d'),
-                    'end_date': week_end.strftime('%Y-%m-%d')
+                    'end_date': week_end.strftime('%Y-%m-%d'),
+                    # 新增：用於 JIRA JQL 查詢的精確時間
+                    'start_datetime': week_start.strftime('%Y-%m-%d %H:%M'),
+                    'end_datetime': week_end.strftime('%Y-%m-%d %H:%M')
                 }
             
             weekly_stats[week_key]['count'] += 1
             weekly_stats[week_key]['issues'].append(issue.get('key'))
             
         except Exception as e:
-            print(f"⚠️  週次統計錯誤: {e}")
+            print(f"⚠️  週次統計錯誤: {e} (issue: {issue.get('key')}, date: {date_str})")
             continue
     
     return weekly_stats
@@ -259,13 +268,24 @@ def filter_issues(issues, start_date, end_date, owner):
             created_date = fields.get('created')
             if created_date:
                 try:
-                    issue_date = datetime.strptime(created_date[:10], '%Y-%m-%d')
-                    if start_date and issue_date < datetime.strptime(start_date, '%Y-%m-%d'):
-                        continue
-                    if end_date and issue_date > datetime.strptime(end_date, '%Y-%m-%d'):
-                        continue
+                    # 解析日期（處理時間部分）
+                    if 'T' in created_date:
+                        issue_date = datetime.fromisoformat(created_date.replace('Z', '+00:00').split('.')[0])
+                    else:
+                        issue_date = datetime.strptime(created_date[:10], '%Y-%m-%d')
+                    
+                    if start_date:
+                        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                        if issue_date < start_dt:
+                            continue
+                    
+                    if end_date:
+                        # 結束日期包含整天：23:59:59
+                        end_dt = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(hours=23, minutes=59, seconds=59)
+                        if issue_date > end_dt:
+                            continue
                 except Exception as e:
-                    print(f"⚠️  日期解析錯誤: {e}")
+                    print(f"⚠️  日期解析錯誤: {e} (issue: {issue.get('key')}, date: {created_date})")
                     pass
         
         # Owner 過濾
@@ -319,6 +339,45 @@ def get_stats():
         
         print(f"📊 過濾後: degrade={len(filtered_degrade)}, resolved={len(filtered_resolved)}")
         
+        # ===== 修復問題 1：確保所有 issues 都有正確的 _source 標記（在分離之前） =====
+        missing_degrade = [i for i in filtered_degrade if i.get('_source') not in ['internal', 'vendor']]
+        missing_resolved = [i for i in filtered_resolved if i.get('_source') not in ['internal', 'vendor']]
+        
+        if missing_degrade:
+            print(f"⚠️  警告: 有 {len(missing_degrade)} 個 degrade issues 沒有正確的 _source 標記，正在修復...")
+            for issue in missing_degrade:
+                if 'vendorjira' in issue.get('self', '').lower():
+                    issue['_source'] = 'vendor'
+                    print(f"   - {issue.get('key')}: 標記為 vendor")
+                else:
+                    issue['_source'] = 'internal'
+                    print(f"   - {issue.get('key')}: 標記為 internal")
+        
+        if missing_resolved:
+            print(f"⚠️  警告: 有 {len(missing_resolved)} 個 resolved issues 沒有正確的 _source 標記，正在修復...")
+            for issue in missing_resolved:
+                if 'vendorjira' in issue.get('self', '').lower():
+                    issue['_source'] = 'vendor'
+                else:
+                    issue['_source'] = 'internal'
+        
+        # 現在所有 issues 都應該有正確的 _source 標記了，進行分離
+        internal_degrade = [i for i in filtered_degrade if i.get('_source') == 'internal']
+        vendor_degrade = [i for i in filtered_degrade if i.get('_source') == 'vendor']
+        internal_resolved = [i for i in filtered_resolved if i.get('_source') == 'internal']
+        vendor_resolved = [i for i in filtered_resolved if i.get('_source') == 'vendor']
+        
+        # ===== 驗證數量一致性 =====
+        print(f"📊 分離驗證:")
+        print(f"   Degrade: total={len(filtered_degrade)}, internal={len(internal_degrade)}, vendor={len(vendor_degrade)}, sum={len(internal_degrade)+len(vendor_degrade)}")
+        print(f"   Resolved: total={len(filtered_resolved)}, internal={len(internal_resolved)}, vendor={len(vendor_resolved)}, sum={len(internal_resolved)+len(vendor_resolved)}")
+        
+        # 檢查是否有數量不一致
+        if len(internal_degrade) + len(vendor_degrade) != len(filtered_degrade):
+            print(f"❌ 錯誤: Degrade 數量不一致！")
+        if len(internal_resolved) + len(vendor_resolved) != len(filtered_resolved):
+            print(f"❌ 錯誤: Resolved 數量不一致！")
+        
         # 收集所有 assignees
         all_owners = set()
         for issue in data['degrade'] + data['resolved']:
@@ -341,56 +400,13 @@ def get_stats():
         total_resolved = len(filtered_resolved)
         overall_percentage = (total_degrade / total_resolved * 100) if total_resolved > 0 else 0
         
-        # 分離內部和 Vendor issues
-        internal_degrade = [i for i in filtered_degrade if i.get('_source') == 'internal']
-        vendor_degrade = [i for i in filtered_degrade if i.get('_source') == 'vendor']
-        internal_resolved = [i for i in filtered_resolved if i.get('_source') == 'internal']
-        vendor_resolved = [i for i in filtered_resolved if i.get('_source') == 'vendor']
-        
-        # 檢查是否有遺失的 issues（沒有 _source 或 _source 不是 internal/vendor）
-        missing_degrade = [i for i in filtered_degrade if i.get('_source') not in ['internal', 'vendor']]
-        missing_resolved = [i for i in filtered_resolved if i.get('_source') not in ['internal', 'vendor']]
-        
-        if missing_degrade:
-            print(f"⚠️  警告: 有 {len(missing_degrade)} 個 degrade issues 沒有正確的 _source 標記")
-            for issue in missing_degrade[:5]:  # 只顯示前 5 個
-                print(f"   - {issue.get('key')}: _source = {issue.get('_source')}")
-        
-        if missing_resolved:
-            print(f"⚠️  警告: 有 {len(missing_resolved)} 個 resolved issues 沒有正確的 _source 標記")
-            for issue in missing_resolved[:5]:
-                print(f"   - {issue.get('key')}: _source = {issue.get('_source')}")
-        
-        # 如果有遺失的 issues，將它們加到 internal 或 vendor（根據 jira site 判斷）
-        for issue in missing_degrade:
-            # 根據 issue key 或 self URL 判斷來源
-            if 'vendorjira' in issue.get('self', '').lower():
-                issue['_source'] = 'vendor'
-                vendor_degrade.append(issue)
-            else:
-                issue['_source'] = 'internal'
-                internal_degrade.append(issue)
-        
-        for issue in missing_resolved:
-            if 'vendorjira' in issue.get('self', '').lower():
-                issue['_source'] = 'vendor'
-                vendor_resolved.append(issue)
-            else:
-                issue['_source'] = 'internal'
-                internal_resolved.append(issue)
-        
-        # 驗證數量
-        print(f"📊 分離驗證:")
-        print(f"   Degrade: total={len(filtered_degrade)}, internal={len(internal_degrade)}, vendor={len(vendor_degrade)}, sum={len(internal_degrade)+len(vendor_degrade)}")
-        print(f"   Resolved: total={len(filtered_resolved)}, internal={len(internal_resolved)}, vendor={len(vendor_resolved)}, sum={len(internal_resolved)+len(vendor_resolved)}")
-        
         # Assignee 分布
         degrade_assignees_internal = manager.get_assignee_distribution(internal_degrade)
         degrade_assignees_vendor = manager.get_assignee_distribution(vendor_degrade)
         resolved_assignees_internal = manager.get_assignee_distribution(internal_resolved)
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
         
-        # 週次統計 - 全部使用 created
+        # ===== 修復問題 2：使用精確的日期時間進行週次統計 =====
         degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
         resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='created')
         weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
@@ -399,6 +415,17 @@ def get_stats():
         degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
         resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='created')
         resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='created')
+        
+        # ===== 驗證週次數量一致性 =====
+        print(f"\n📊 週次數量驗證:")
+        for week in sorted(set(list(degrade_weekly.keys()) + list(degrade_weekly_internal.keys()) + list(degrade_weekly_vendor.keys()))):
+            total_count = degrade_weekly.get(week, {}).get('count', 0)
+            internal_count = degrade_weekly_internal.get(week, {}).get('count', 0)
+            vendor_count = degrade_weekly_vendor.get(week, {}).get('count', 0)
+            sum_count = internal_count + vendor_count
+            
+            if total_count != sum_count:
+                print(f"   ⚠️  {week}: total={total_count}, internal={internal_count}, vendor={vendor_count}, sum={sum_count} - 不一致！")
         
         return jsonify({
             'success': True,
@@ -808,7 +835,7 @@ def export_html():
     <div class="container">
         <div class="header">
             <h1>📊 JIRA Degrade % 分析報告</h1>
-            <p>公版 SQA/QC Degrade 問題統計分析</p>
+            <p>公版 SQA/QC Degrade 問題統計分析（修復版）</p>
             <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
                 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             </p>
@@ -1075,11 +1102,10 @@ def export_html():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    print("🚀 啟動 JIRA Degrade 分析系統（增強版）...")
-    print("   新功能:")
-    print("   ✅ 週次圖表（內部/Vendor 分開）")
-    print("   ✅ 匯出 Excel（多頁籤）")
-    print("   ✅ 匯出 HTML（靜態）")
-    print("   ✅ UI 美化 + 載入動畫")
+    print("🚀 啟動 JIRA Degrade 分析系統（修復版）...")
+    print("   修復內容:")
+    print("   ✅ 解決合併數量與分開數量不一致的問題")
+    print("   ✅ 修正週次日期範圍計算，確保與 JIRA 查詢一致")
+    print("   ✅ 結束日期使用 23:59:59，包含當天所有時間")
     print("   ✅ 全部使用 created 日期")
     app.run(debug=True, host='0.0.0.0', port=5000)

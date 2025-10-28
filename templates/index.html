@@ -953,28 +953,25 @@
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
-            // 獲取後端返回的正確日期範圍
             const dateRangesKey = `${type}_${source}`;
             const dateRanges = weeklyDateRanges[dateRangesKey];
             
             if (!dateRanges || !dateRanges[week]) {
-                console.error(`找不到週次 ${week} 的日期範圍`);
                 alert(`無法找到週次 ${week} 的日期範圍，請重新載入頁面`);
                 return;
             }
             
-            const weekStartStr = dateRanges[week].start_date;
-            const weekEndStr = dateRanges[week].end_date;
+            const weekStartDate = dateRanges[week].start_date;
+            const weekEndDate = dateRanges[week].end_date;
             
-            console.log(`週次 ${week} 的日期範圍: ${weekStartStr} 到 ${weekEndStr}`);
+            // ✅ 手動添加時間：開始 00:00，結束 23:59
+            let jql = `filter=${filterId} AND created >= "${weekStartDate} 00:00" AND created <= "${weekEndDate} 23:59"`;
             
-            // 建立 JQL - 使用後端提供的正確日期範圍
-            let jql = `filter=${filterId} AND created >= "${weekStartStr}" AND created <= "${weekEndStr}"`;
-            
-            // 如果有用戶過濾，也加入
             if (currentFilters.owner) {
                 jql += ` AND assignee="${currentFilters.owner}"`;
             }
+            
+            console.log(`週次 ${week} 的 JQL: ${jql}`);
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
             window.open(url, '_blank');
