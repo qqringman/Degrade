@@ -158,6 +158,14 @@
             gap: 5px;
         }
         
+        /* 新增：按鈕容器 - 水平排列 */
+        .filter-buttons {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
         .filter-item label {
             font-size: 0.9em;
             color: #666;
@@ -453,9 +461,10 @@
                             <option value="5000">5000</option>
                         </select>
                     </div>
-                    <div class="filter-item">
-                        <button class="btn btn-primary" onclick="applyFilters()">🔍 套用過濾</button>
+                    <!-- 修改：按鈕容器改為水平排列 -->
+                    <div class="filter-buttons">
                         <button class="btn btn-primary" onclick="resetFilters()">🔄 重置</button>
+                        <button class="btn btn-primary" onclick="applyFilters()">🔍 套用過濾</button>
                     </div>
                 </div>
             </div>
@@ -1071,12 +1080,12 @@
             // 建立 JQL - 與後端過濾邏輯完全一致，使用 created
             let jql = `filter=${filterId} AND assignee="${assigneeName}"`;
             
-            // 添加日期過濾（與後端一致）- 使用 created
+            // 添加日期過濾（與後端一致）- 使用 created，修改為絕對日期時間格式
             if (currentFilters.start_date) {
-                jql += ` AND created >= "${currentFilters.start_date}"`;
+                jql += ` AND created >= "${currentFilters.start_date} 00:00"`;
             }
             if (currentFilters.end_date) {
-                jql += ` AND created <= "${currentFilters.end_date}"`;
+                jql += ` AND created <= "${currentFilters.end_date} 23:59"`;
             }
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
@@ -1110,15 +1119,15 @@
             sortedData.forEach(([name, count], index) => {
                 const percentage = (count / total * 100).toFixed(2);
                 
-                // 建立 JIRA 連結 - 與點擊事件使用相同的邏輯，使用 created
+                // 建立 JIRA 連結 - 與點擊事件使用相同的邏輯，使用 created，修改為絕對日期時間格式
                 const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
                 const filterId = filterIds[type][source];
                 let jql = `filter=${filterId} AND assignee="${name}"`;
                 if (currentFilters.start_date) {
-                    jql += ` AND created >= "${currentFilters.start_date}"`;
+                    jql += ` AND created >= "${currentFilters.start_date} 00:00"`;
                 }
                 if (currentFilters.end_date) {
-                    jql += ` AND created <= "${currentFilters.end_date}"`;
+                    jql += ` AND created <= "${currentFilters.end_date} 23:59"`;
                 }
                 const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
                 

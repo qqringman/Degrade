@@ -635,7 +635,7 @@ def export_excel():
 
 @app.route('/api/export/html')
 def export_html():
-    """匯出 HTML - 靜態，包含可點擊圖表"""
+    """匯出 HTML - 完整功能版，包含可點擊圖表"""
     try:
         data = get_data()
         if not data:
@@ -649,6 +649,21 @@ def export_html():
         # 過濾資料
         filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner)
         filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner)
+        
+        # 修復 _source 標記
+        for issue in filtered_degrade:
+            if issue.get('_source') not in ['internal', 'vendor']:
+                if 'vendorjira' in issue.get('self', '').lower():
+                    issue['_source'] = 'vendor'
+                else:
+                    issue['_source'] = 'internal'
+        
+        for issue in filtered_resolved:
+            if issue.get('_source') not in ['internal', 'vendor']:
+                if 'vendorjira' in issue.get('self', '').lower():
+                    issue['_source'] = 'vendor'
+                else:
+                    issue['_source'] = 'internal'
         
         # 分離內部和 Vendor
         internal_degrade = [i for i in filtered_degrade if i.get('_source') == 'internal']
@@ -718,6 +733,60 @@ def export_html():
         resolved_vnd_labels = json.dumps(list(resolved_assignees_vendor_top.keys()))
         resolved_vnd_data = json.dumps(list(resolved_assignees_vendor_top.values()))
         
+        # ===== 準備週次日期範圍數據（用於 JIRA 跳轉）=====
+        weekly_date_ranges_degrade_internal = {}
+        for week, stats in degrade_weekly_internal.items():
+            weekly_date_ranges_degrade_internal[week] = {
+                'start_date': stats.get('start_date'),
+                'end_date': stats.get('end_date'),
+                'start_datetime': stats.get('start_datetime'),
+                'end_datetime': stats.get('end_datetime')
+            }
+        
+        weekly_date_ranges_degrade_vendor = {}
+        for week, stats in degrade_weekly_vendor.items():
+            weekly_date_ranges_degrade_vendor[week] = {
+                'start_date': stats.get('start_date'),
+                'end_date': stats.get('end_date'),
+                'start_datetime': stats.get('start_datetime'),
+                'end_datetime': stats.get('end_datetime')
+            }
+        
+        weekly_date_ranges_resolved_internal = {}
+        for week, stats in resolved_weekly_internal.items():
+            weekly_date_ranges_resolved_internal[week] = {
+                'start_date': stats.get('start_date'),
+                'end_date': stats.get('end_date'),
+                'start_datetime': stats.get('start_datetime'),
+                'end_datetime': stats.get('end_datetime')
+            }
+        
+        weekly_date_ranges_resolved_vendor = {}
+        for week, stats in resolved_weekly_vendor.items():
+            weekly_date_ranges_resolved_vendor[week] = {
+                'start_date': stats.get('start_date'),
+                'end_date': stats.get('end_date'),
+                'start_datetime': stats.get('start_datetime'),
+                'end_datetime': stats.get('end_datetime')
+            }
+        
+        # 轉換為 JSON
+        date_ranges_degrade_internal_json = json.dumps(weekly_date_ranges_degrade_internal)
+        date_ranges_degrade_vendor_json = json.dumps(weekly_date_ranges_degrade_vendor)
+        date_ranges_resolved_internal_json = json.dumps(weekly_date_ranges_resolved_internal)
+        date_ranges_resolved_vendor_json = json.dumps(weekly_date_ranges_resolved_vendor)
+        
+        # JIRA sites 和 filter IDs
+        jira_sites_json = json.dumps(data['jira_sites'])
+        filter_ids_json = json.dumps(FILTERS)
+        
+        # 當前過濾條件
+        current_filters_json = json.dumps({
+            'start_date': start_date or '',
+            'end_date': end_date or '',
+            'owner': owner or ''
+        })
+        
         # 生成 HTML
         html_content = f"""
 <!DOCTYPE html>
@@ -778,6 +847,11 @@ def export_html():
             border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             text-align: center;
+            transition: transform 0.3s;
+        }}
+        
+        .stat-card:hover {{
+            transform: translateY(-5px);
         }}
         
         .stat-card h3 {{
@@ -789,6 +863,25 @@ def export_html():
         
         .stat-card .value {{
             font-size: 3em;
+            font-weight: bold;
+            color: #667eea;
+        }}
+        
+        .stat-card .sub-stats {{
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }}
+        
+        .stat-card .sub-stat .label {{
+            font-size: 0.8em;
+            color: #999;
+        }}
+        
+        .stat-card .sub-stat .value {{
+            font-size: 1.2em;
             font-weight: bold;
             color: #667eea;
         }}
@@ -810,6 +903,7 @@ def export_html():
         .chart-wrapper {{
             position: relative;
             height: 400px;
+            cursor: pointer;
         }}
         
         .badge {{
@@ -829,26 +923,64 @@ def export_html():
             background: #fff3e0;
             color: #f57c00;
         }}
+        
+        .info-banner {{
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 0.95em;
+        }}
+        
+        .info-banner strong {{
+            font-weight: 600;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📊 JIRA Degrade % 分析報告</h1>
-            <p>公版 SQA/QC Degrade 問題統計分析（修復版）</p>
+            <p>公版 SQA/QC Degrade 問題統計分析（完整互動版）</p>
             <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
                 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             </p>
+        </div>
+        
+        <div class="info-banner">
+            <strong>💡 提示：</strong> 圖表可以點擊！點擊週次 bar 可跳轉到 JIRA 查看該週的 issues，點擊 Assignee bar 可查看該人員的所有 issues
         </div>
         
         <div class="stats-grid">
             <div class="stat-card">
                 <h3>Degrade Issues</h3>
                 <div class="value">{total_degrade}</div>
+                <div class="sub-stats">
+                    <div class="sub-stat">
+                        <div class="label">內部</div>
+                        <div class="value">{len(internal_degrade)}</div>
+                    </div>
+                    <div class="sub-stat">
+                        <div class="label">Vendor</div>
+                        <div class="value">{len(vendor_degrade)}</div>
+                    </div>
+                </div>
             </div>
             <div class="stat-card">
                 <h3>Resolved Issues</h3>
                 <div class="value">{total_resolved}</div>
+                <div class="sub-stats">
+                    <div class="sub-stat">
+                        <div class="label">內部</div>
+                        <div class="value">{len(internal_resolved)}</div>
+                    </div>
+                    <div class="sub-stat">
+                        <div class="label">Vendor</div>
+                        <div class="value">{len(vendor_resolved)}</div>
+                    </div>
+                </div>
             </div>
             <div class="stat-card">
                 <h3>Degrade %</h3>
@@ -871,42 +1003,42 @@ def export_html():
         </div>
         
         <div class="chart-container">
-            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
-                <canvas id="weeklyInternal"></canvas>
+                <canvas id="weeklyDegradeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
-                <canvas id="weeklyVendor"></canvas>
+                <canvas id="weeklyDegradeVendor"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="degradeAssigneeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="degradeAssigneeVendor"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="resolvedAssigneeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="resolvedAssigneeVendor"></canvas>
             </div>
@@ -914,6 +1046,71 @@ def export_html():
     </div>
     
     <script>
+        // ===== 全域變數設定 =====
+        const jiraSites = {jira_sites_json};
+        const filterIds = {filter_ids_json};
+        const currentFilters = {current_filters_json};
+        
+        // 週次日期範圍
+        const weeklyDateRanges = {{
+            degrade_internal: {date_ranges_degrade_internal_json},
+            degrade_vendor: {date_ranges_degrade_vendor_json},
+            resolved_internal: {date_ranges_resolved_internal_json},
+            resolved_vendor: {date_ranges_resolved_vendor_json}
+        }};
+        
+        // ===== JIRA 跳轉函數 =====
+        function openWeekInJira(week, source, type) {{
+            const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+            const filterId = filterIds[type][source];
+            
+            const dateRangesKey = `${{type}}_${{source}}`;
+            const dateRanges = weeklyDateRanges[dateRangesKey];
+            
+            if (!dateRanges || !dateRanges[week]) {{
+                alert(`無法找到週次 ${{week}} 的日期範圍`);
+                return;
+            }}
+            
+            // 使用絕對日期時間格式（YYYY-MM-DD HH:MM）代替 startOfDay/endOfDay 函數
+            const weekStartDate = dateRanges[week].start_date;
+            const weekEndDate = dateRanges[week].end_date;
+            
+            let jql = `filter=${{filterId}} AND created >= "${{weekStartDate}} 00:00" AND created <= "${{weekEndDate}} 23:59"`;
+            
+            if (currentFilters.owner) {{
+                jql += ` AND assignee="${{currentFilters.owner}}"`;
+            }}
+            
+            console.log(`🔗 跳轉 JIRA: 週次 ${{week}} (${{source}})`);
+            console.log(`   JQL: ${{jql}}`);
+            
+            const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
+            window.open(url, '_blank');
+        }}
+        
+        function openAssigneeInJira(assigneeName, source, type) {{
+            const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+            const filterId = filterIds[type][source];
+            
+            let jql = `filter=${{filterId}} AND assignee="${{assigneeName}}"`;
+            
+            if (currentFilters.start_date) {{
+                jql += ` AND created >= "${{currentFilters.start_date}} 00:00"`;
+            }}
+            if (currentFilters.end_date) {{
+                jql += ` AND created <= "${{currentFilters.end_date}} 23:59"`;
+            }}
+            
+            console.log(`🔗 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}})`);
+            console.log(`   JQL: ${{jql}}`);
+            
+            const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
+            window.open(url, '_blank');
+        }}
+        
+        // ===== 圖表繪製 =====
+        
         // 趨勢圖
         new Chart(document.getElementById('trendChart'), {{
             type: 'line',
@@ -926,12 +1123,30 @@ def export_html():
                     backgroundColor: 'rgba(102, 126, 234, 0.1)',
                     borderWidth: 3,
                     fill: true,
-                    tension: 0.4
+                    tension: 0.4,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
                 }}]
             }},
             options: {{
                 responsive: true,
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            label: function(context) {{
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
+                            }}
+                        }}
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        beginAtZero: true,
+                        title: {{ display: true, text: 'Percentage (%)' }}
+                    }}
+                }}
             }}
         }});
         
@@ -955,12 +1170,15 @@ def export_html():
             }},
             options: {{
                 responsive: true,
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{ display: true }}
+                }}
             }}
         }});
         
-        // 週次分布 - 內部
-        new Chart(document.getElementById('weeklyInternal'), {{
+        // 週次 Degrade 分布 - 內部（可點擊）
+        new Chart(document.getElementById('weeklyDegradeInternal'), {{
             type: 'bar',
             data: {{
                 labels: {weekly_internal_labels},
@@ -979,12 +1197,30 @@ def export_html():
             }},
             options: {{
                 responsive: true,
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                onClick: (event, elements) => {{
+                    if (elements.length > 0) {{
+                        const index = elements[0].index;
+                        const datasetIndex = elements[0].datasetIndex;
+                        const weeks = {weekly_internal_labels};
+                        const week = weeks[index];
+                        const type = datasetIndex === 0 ? 'degrade' : 'resolved';
+                        openWeekInJira(week, 'internal', type);
+                    }}
+                }},
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
+                        }}
+                    }}
+                }}
             }}
         }});
         
-        // 週次分布 - Vendor
-        new Chart(document.getElementById('weeklyVendor'), {{
+        // 週次 Degrade 分布 - Vendor（可點擊）
+        new Chart(document.getElementById('weeklyDegradeVendor'), {{
             type: 'bar',
             data: {{
                 labels: {weekly_vendor_labels},
@@ -1003,11 +1239,29 @@ def export_html():
             }},
             options: {{
                 responsive: true,
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                onClick: (event, elements) => {{
+                    if (elements.length > 0) {{
+                        const index = elements[0].index;
+                        const datasetIndex = elements[0].datasetIndex;
+                        const weeks = {weekly_vendor_labels};
+                        const week = weeks[index];
+                        const type = datasetIndex === 0 ? 'degrade' : 'resolved';
+                        openWeekInJira(week, 'vendor', type);
+                    }}
+                }},
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
+                        }}
+                    }}
+                }}
             }}
         }});
         
-        // Assignee - Degrade Internal
+        // Assignee - Degrade Internal（可點擊）
         new Chart(document.getElementById('degradeAssigneeInternal'), {{
             type: 'bar',
             data: {{
@@ -1021,11 +1275,27 @@ def export_html():
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
-                indexAxis: 'y'
+                indexAxis: 'y',
+                onClick: (event, elements) => {{
+                    if (elements.length > 0) {{
+                        const index = elements[0].index;
+                        const names = {degrade_int_labels};
+                        const assigneeName = names[index];
+                        openAssigneeInJira(assigneeName, 'internal', 'degrade');
+                    }}
+                }},
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                        }}
+                    }}
+                }}
             }}
         }});
         
-        // Assignee - Degrade Vendor
+        // Assignee - Degrade Vendor（可點擊）
         new Chart(document.getElementById('degradeAssigneeVendor'), {{
             type: 'bar',
             data: {{
@@ -1039,11 +1309,27 @@ def export_html():
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
-                indexAxis: 'y'
+                indexAxis: 'y',
+                onClick: (event, elements) => {{
+                    if (elements.length > 0) {{
+                        const index = elements[0].index;
+                        const names = {degrade_vnd_labels};
+                        const assigneeName = names[index];
+                        openAssigneeInJira(assigneeName, 'vendor', 'degrade');
+                    }}
+                }},
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                        }}
+                    }}
+                }}
             }}
         }});
         
-        // Assignee - Resolved Internal
+        // Assignee - Resolved Internal（可點擊）
         new Chart(document.getElementById('resolvedAssigneeInternal'), {{
             type: 'bar',
             data: {{
@@ -1057,11 +1343,27 @@ def export_html():
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
-                indexAxis: 'y'
+                indexAxis: 'y',
+                onClick: (event, elements) => {{
+                    if (elements.length > 0) {{
+                        const index = elements[0].index;
+                        const names = {resolved_int_labels};
+                        const assigneeName = names[index];
+                        openAssigneeInJira(assigneeName, 'internal', 'resolved');
+                    }}
+                }},
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                        }}
+                    }}
+                }}
             }}
         }});
         
-        // Assignee - Resolved Vendor
+        // Assignee - Resolved Vendor（可點擊）
         new Chart(document.getElementById('resolvedAssigneeVendor'), {{
             type: 'bar',
             data: {{
@@ -1075,9 +1377,29 @@ def export_html():
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
-                indexAxis: 'y'
+                indexAxis: 'y',
+                onClick: (event, elements) => {{
+                    if (elements.length > 0) {{
+                        const index = elements[0].index;
+                        const names = {resolved_vnd_labels};
+                        const assigneeName = names[index];
+                        openAssigneeInJira(assigneeName, 'vendor', 'resolved');
+                    }}
+                }},
+                plugins: {{
+                    legend: {{ display: true }},
+                    tooltip: {{
+                        callbacks: {{
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                        }}
+                    }}
+                }}
             }}
         }});
+        
+        console.log('✅ 所有圖表已載入，圖表可點擊跳轉到 JIRA');
+        console.log('📊 JIRA Sites:', jiraSites);
+        console.log('📋 Filter IDs:', filterIds);
     </script>
 </body>
 </html>
