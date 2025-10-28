@@ -164,7 +164,7 @@
             font-weight: 600;
         }
         
-        .date-input, .owner-select {
+        .date-input, .owner-select, .limit-select {
             padding: 10px 15px;
             border: 2px solid #ddd;
             border-radius: 6px;
@@ -173,7 +173,7 @@
             transition: border-color 0.3s;
         }
         
-        .date-input:focus, .owner-select:focus {
+        .date-input:focus, .owner-select:focus, .limit-select:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -251,6 +251,12 @@
         .chart-wrapper {
             position: relative;
             height: 400px;
+        }
+        
+        /* 動態高度的圖表容器 */
+        .chart-wrapper-dynamic {
+            position: relative;
+            min-height: 400px;
         }
         
         /* Loading 動畫 */
@@ -411,7 +417,7 @@
                 </div>
             </div>
             
-            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析</p>
+            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（全部使用 created 日期）</p>
             
             <div class="cache-indicator" id="cacheIndicator">
                 <div class="cache-dot"></div>
@@ -433,6 +439,18 @@
                         <label for="ownerFilter">Assignee：</label>
                         <select id="ownerFilter" class="owner-select">
                             <option value="">全部</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label for="chartLimit">圖表顯示筆數：</label>
+                        <select id="chartLimit" class="limit-select" onchange="updateChartLimit()">
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                            <option value="5000">5000</option>
                         </select>
                     </div>
                     <div class="filter-item">
@@ -532,14 +550,14 @@
             <!-- Assignee 分布圖表 - Degrade -->
             <div class="chart-container">
                 <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
-                <div class="chart-wrapper">
+                <div class="chart-wrapper-dynamic" id="degradeAssigneeInternalWrapper">
                     <canvas id="degradeAssigneeInternalChart"></canvas>
                 </div>
             </div>
             
             <div class="chart-container">
                 <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
-                <div class="chart-wrapper">
+                <div class="chart-wrapper-dynamic" id="degradeAssigneeVendorWrapper">
                     <canvas id="degradeAssigneeVendorChart"></canvas>
                 </div>
             </div>
@@ -547,14 +565,14 @@
             <!-- Assignee 分布圖表 - Resolved -->
             <div class="chart-container">
                 <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
-                <div class="chart-wrapper">
+                <div class="chart-wrapper-dynamic" id="resolvedAssigneeInternalWrapper">
                     <canvas id="resolvedAssigneeInternalChart"></canvas>
                 </div>
             </div>
             
             <div class="chart-container">
                 <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
-                <div class="chart-wrapper">
+                <div class="chart-wrapper-dynamic" id="resolvedAssigneeVendorWrapper">
                     <canvas id="resolvedAssigneeVendorChart"></canvas>
                 </div>
             </div>
@@ -591,6 +609,8 @@
             end_date: '',
             owner: ''
         };
+        let chartLimit = 20; // 預設顯示筆數
+        let cachedData = null; // 快取資料以便重繪圖表
         
         // 顯示/隱藏 Loading
         function showLoading(show, message = '載入中...') {
@@ -599,6 +619,24 @@
             overlay.style.display = show ? 'flex' : 'none';
             if (show && message) {
                 document.querySelector('.loading-text').textContent = message;
+            }
+        }
+        
+        // 更新圖表顯示筆數
+        function updateChartLimit() {
+            chartLimit = parseInt(document.getElementById('chartLimit').value);
+            if (cachedData) {
+                // 重新繪製 Assignee 圖表
+                drawAssigneeChart('degradeAssigneeInternalChart', cachedData.assignees.degrade.internal, 'Degrade Issues', '#ff6b6b');
+                drawAssigneeChart('degradeAssigneeVendorChart', cachedData.assignees.degrade.vendor, 'Degrade Issues', '#ff6b6b');
+                drawAssigneeChart('resolvedAssigneeInternalChart', cachedData.assignees.resolved.internal, 'Resolved Issues', '#51cf66');
+                drawAssigneeChart('resolvedAssigneeVendorChart', cachedData.assignees.resolved.vendor, 'Resolved Issues', '#51cf66');
+                
+                // 重新繪製表格
+                drawAssigneeTable('degradeAssigneeInternalTable', cachedData.assignees.degrade.internal, 'internal', 'degrade');
+                drawAssigneeTable('degradeAssigneeVendorTable', cachedData.assignees.degrade.vendor, 'vendor', 'degrade');
+                drawAssigneeTable('resolvedAssigneeInternalTable', cachedData.assignees.resolved.internal, 'internal', 'resolved');
+                drawAssigneeTable('resolvedAssigneeVendorTable', cachedData.assignees.resolved.vendor, 'vendor', 'resolved');
             }
         }
         
@@ -623,8 +661,16 @@
                 }
                 
                 const data = result.data;
+                cachedData = data; // 快取資料
                 jiraSites = data.jira_sites || {};
                 filterIds = data.filter_ids || {};
+                
+                // 更新 currentFilters
+                currentFilters = {
+                    start_date: filters.start_date || '',
+                    end_date: filters.end_date || '',
+                    owner: filters.owner || ''
+                };
                 
                 // 填充 owner 下拉選單
                 if (data.all_owners && !filters.owner) {
@@ -788,15 +834,15 @@
                         {
                             label: 'Degrade Issues',
                             data: degradeCounts,
-                            backgroundColor: source === 'internal' ? '#ff6b6b' : '#ff6b6b',
-                            borderColor: source === 'internal' ? '#ee5a5a' : '#ee5a5a',
+                            backgroundColor: '#ff6b6b',
+                            borderColor: '#ee5a5a',
                             borderWidth: 1
                         },
                         {
                             label: 'Resolved Issues',
                             data: resolvedCounts,
-                            backgroundColor: source === 'internal' ? '#51cf66' : '#51cf66',
-                            borderColor: source === 'internal' ? '#40c057' : '#40c057',
+                            backgroundColor: '#51cf66',
+                            borderColor: '#40c057',
                             borderWidth: 1
                         }
                     ]
@@ -840,21 +886,47 @@
             ctx.canvas.style.cursor = 'pointer';
         }
         
-        // 開啟週次的 JIRA（支援 degrade 和 resolved）
+        // 開啟週次的 JIRA（支援 degrade 和 resolved）- 全部使用 created
         function openWeekInJira(week, source, type) {
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
             // 計算週的起始和結束日期
             const [year, weekNum] = week.split('-W');
-            const startDate = getDateOfISOWeek(parseInt(weekNum), parseInt(year));
-            const endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + 6);
+            const weekStartDate = getDateOfISOWeek(parseInt(weekNum), parseInt(year));
+            const weekEndDate = new Date(weekStartDate);
+            weekEndDate.setDate(weekEndDate.getDate() + 6);
             
-            const startStr = startDate.toISOString().split('T')[0];
-            const endStr = endDate.toISOString().split('T')[0];
+            const weekStartStr = weekStartDate.toISOString().split('T')[0];
+            const weekEndStr = weekEndDate.toISOString().split('T')[0];
             
-            let jql = `filter=${filterId} AND created >= "${startStr}" AND created <= "${endStr}"`;
+            // 建立 JQL - 全部使用 created 日期
+            let jql = `filter=${filterId}`;
+            
+            // 決定實際使用的日期範圍
+            let actualStartDate = weekStartStr;
+            let actualEndDate = weekEndStr;
+            
+            if (currentFilters.start_date || currentFilters.end_date) {
+                // 有用戶過濾 - 取交集
+                if (currentFilters.start_date && currentFilters.start_date > weekStartStr) {
+                    actualStartDate = currentFilters.start_date;
+                }
+                if (currentFilters.end_date && currentFilters.end_date < weekEndStr) {
+                    actualEndDate = currentFilters.end_date;
+                }
+                
+                // 添加日期條件到 JQL - 使用 created
+                jql += ` AND created >= "${actualStartDate}" AND created <= "${actualEndDate}"`;
+            } else {
+                // 沒有用戶過濾 - 只使用週次日期
+                jql += ` AND created >= "${weekStartStr}" AND created <= "${weekEndStr}"`;
+            }
+            
+            // 如果有 owner 過濾，也加入
+            if (currentFilters.owner) {
+                jql += ` AND assignee="${currentFilters.owner}"`;
+            }
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
             window.open(url, '_blank');
@@ -870,17 +942,22 @@
             return ISOweekStart;
         }
         
-        // Assignee 圖表（可點擊）
+        // Assignee 圖表（可點擊）- 動態高度
         function drawAssigneeChart(canvasId, assigneeData, label, color) {
             const ctx = document.getElementById(canvasId).getContext('2d');
             
-            // 取前 20 名
+            // 取前 N 名（根據 chartLimit）
             const sortedData = Object.entries(assigneeData)
                 .sort((a, b) => b[1] - a[1])
-                .slice(0, 20);
+                .slice(0, chartLimit);
             
             const names = sortedData.map(d => d[0]);
             const counts = sortedData.map(d => d[1]);
+            
+            // 動態調整高度（每個 bar 約 30px）
+            const chartHeight = Math.max(400, names.length * 30);
+            const wrapper = document.getElementById(canvasId).parentElement;
+            wrapper.style.height = chartHeight + 'px';
             
             // 判斷 source 和 type（從 canvasId 解析）
             let source = 'internal';
@@ -930,6 +1007,19 @@
                                 display: true,
                                 text: 'Count'
                             }
+                        },
+                        y: {
+                            ticks: {
+                                autoSkip: false,
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        }
+                    },
+                    layout: {
+                        padding: {
+                            left: 20
                         }
                     }
                 }
@@ -938,12 +1028,15 @@
             ctx.canvas.style.cursor = 'pointer';
         }
         
-        // 開啟 Assignee 的 JIRA
+        // 開啟 Assignee 的 JIRA - 全部使用 created
         function openAssigneeInJira(assigneeName, source, type) {
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
+            // 建立 JQL - 與後端過濾邏輯完全一致，使用 created
             let jql = `filter=${filterId} AND assignee="${assigneeName}"`;
+            
+            // 添加日期過濾（與後端一致）- 使用 created
             if (currentFilters.start_date) {
                 jql += ` AND created >= "${currentFilters.start_date}"`;
             }
@@ -959,10 +1052,10 @@
         function drawAssigneeTable(tableId, assigneeData, source, type) {
             const container = document.getElementById(tableId);
             
-            // 取前 20 名
+            // 取前 N 名（根據 chartLimit）
             const sortedData = Object.entries(assigneeData)
                 .sort((a, b) => b[1] - a[1])
-                .slice(0, 20);
+                .slice(0, chartLimit);
             
             const total = Object.values(assigneeData).reduce((a, b) => a + b, 0);
             
@@ -982,7 +1075,7 @@
             sortedData.forEach(([name, count], index) => {
                 const percentage = (count / total * 100).toFixed(2);
                 
-                // 建立 JIRA 連結
+                // 建立 JIRA 連結 - 與點擊事件使用相同的邏輯，使用 created
                 const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
                 const filterId = filterIds[type][source];
                 let jql = `filter=${filterId} AND assignee="${name}"`;
@@ -1063,6 +1156,8 @@
             document.getElementById('startDate').value = '';
             document.getElementById('endDate').value = '';
             document.getElementById('ownerFilter').value = '';
+            document.getElementById('chartLimit').value = '20';
+            chartLimit = 20;
             currentFilters = { start_date: '', end_date: '', owner: '' };
             loadData();
         }
@@ -1089,35 +1184,55 @@
         
         // 匯出 Excel
         function exportExcel() {
+            // 直接從表單讀取當前值
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const owner = document.getElementById('ownerFilter').value;
+            
             const params = new URLSearchParams();
-            if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
-            if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
-            if (currentFilters.owner) params.append('owner', currentFilters.owner);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (owner) params.append('owner', owner);
             
             window.open('/api/export/excel?' + params.toString(), '_blank');
         }
         
         // 匯出 HTML
         function exportHTML() {
+            // 直接從表單讀取當前值
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const owner = document.getElementById('ownerFilter').value;
+            
             const params = new URLSearchParams();
-            if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
-            if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
-            if (currentFilters.owner) params.append('owner', currentFilters.owner);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (owner) params.append('owner', owner);
             
             window.open('/api/export/html?' + params.toString(), '_blank');
         }
         
         // 頁面載入時
         window.addEventListener('load', () => {
-            loadData();
-            
             // 設定預設日期範圍（最近一年）
             const endDate = new Date();
             const startDate = new Date();
             startDate.setFullYear(startDate.getFullYear() - 1);
             
-            document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
-            document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+            const endDateStr = endDate.toISOString().split('T')[0];
+            const startDateStr = startDate.toISOString().split('T')[0];
+            
+            document.getElementById('endDate').value = endDateStr;
+            document.getElementById('startDate').value = startDateStr;
+            
+            // 使用設定的日期範圍載入資料
+            currentFilters = {
+                start_date: startDateStr,
+                end_date: endDateStr,
+                owner: ''
+            };
+            
+            loadData(currentFilters);
         });
     </script>
 </body>

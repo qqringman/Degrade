@@ -22,6 +22,8 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from urllib.parse import quote
+import json
 
 # 載入環境變數
 load_dotenv()
@@ -159,6 +161,44 @@ def get_data():
     print("⚠ 快取無效，重新載入...")
     return load_data()
 
+def analyze_by_week_with_dates(issues, date_field='created'):
+    """統計週次分布，並返回每週的起始和結束日期"""
+    weekly_stats = {}
+    
+    for issue in issues:
+        fields = issue.get('fields', {})
+        date_str = fields.get(date_field)
+        
+        if not date_str:
+            continue
+        
+        try:
+            issue_date = datetime.strptime(date_str[:10], '%Y-%m-%d')
+            # 計算 ISO 週次
+            iso_calendar = issue_date.isocalendar()
+            week_key = f"{iso_calendar[0]}-W{iso_calendar[1]:02d}"
+            
+            if week_key not in weekly_stats:
+                # 計算該週的起始日期（星期一）
+                week_start = issue_date - timedelta(days=issue_date.weekday())
+                week_end = week_start + timedelta(days=6)
+                
+                weekly_stats[week_key] = {
+                    'count': 0,
+                    'issues': [],
+                    'start_date': week_start.strftime('%Y-%m-%d'),
+                    'end_date': week_end.strftime('%Y-%m-%d')
+                }
+            
+            weekly_stats[week_key]['count'] += 1
+            weekly_stats[week_key]['issues'].append(issue.get('key'))
+            
+        except Exception as e:
+            print(f"⚠️  週次統計錯誤: {e}")
+            continue
+    
+    return weekly_stats
+
 def calculate_weekly_percentage(degrade_weekly, resolved_weekly):
     """計算每週百分比"""
     all_weeks = sorted(set(list(degrade_weekly.keys()) + list(resolved_weekly.keys())))
@@ -254,7 +294,7 @@ def get_stats():
         print(f"📊 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
         print(f"📊 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         
-        # 過濾資料
+        # 過濾資料 - 全部使用 created 日期
         filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner)
         filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner)
         
@@ -282,28 +322,54 @@ def get_stats():
         total_resolved = len(filtered_resolved)
         overall_percentage = (total_degrade / total_resolved * 100) if total_resolved > 0 else 0
         
-        # 每週統計：全部使用 created 日期
-        degrade_weekly = manager.analyze_by_week(filtered_degrade, date_field='created')
-        resolved_weekly = manager.analyze_by_week(filtered_resolved, date_field='created')
-        weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
-        
         # 分離內部和 Vendor issues
         internal_degrade = [i for i in filtered_degrade if i.get('_source') == 'internal']
         vendor_degrade = [i for i in filtered_degrade if i.get('_source') == 'vendor']
         internal_resolved = [i for i in filtered_resolved if i.get('_source') == 'internal']
         vendor_resolved = [i for i in filtered_resolved if i.get('_source') == 'vendor']
         
+        # 檢查是否有遺失的 issues（沒有 _source 或 _source 不是 internal/vendor）
+        missing_degrade = [i for i in filtered_degrade if i.get('_source') not in ['internal', 'vendor']]
+        missing_resolved = [i for i in filtered_resolved if i.get('_source') not in ['internal', 'vendor']]
+        
+        if missing_degrade:
+            print(f"⚠️  警告: 有 {len(missing_degrade)} 個 degrade issues 沒有正確的 _source 標記")
+            for issue in missing_degrade[:5]:  # 只顯示前 5 個
+                print(f"   - {issue.get('key')}: _source = {issue.get('_source')}")
+        
+        if missing_resolved:
+            print(f"⚠️  警告: 有 {len(missing_resolved)} 個 resolved issues 沒有正確的 _source 標記")
+            for issue in missing_resolved[:5]:
+                print(f"   - {issue.get('key')}: _source = {issue.get('_source')}")
+        
+        # 如果有遺失的 issues，將它們加到 internal 或 vendor（根據 jira site 判斷）
+        for issue in missing_degrade:
+            # 根據 issue key 或 self URL 判斷來源
+            if 'vendorjira' in issue.get('self', '').lower():
+                issue['_source'] = 'vendor'
+                vendor_degrade.append(issue)
+            else:
+                issue['_source'] = 'internal'
+                internal_degrade.append(issue)
+        
+        for issue in missing_resolved:
+            if 'vendorjira' in issue.get('self', '').lower():
+                issue['_source'] = 'vendor'
+                vendor_resolved.append(issue)
+            else:
+                issue['_source'] = 'internal'
+                internal_resolved.append(issue)
+        
+        # 驗證數量
+        print(f"📊 分離驗證:")
+        print(f"   Degrade: total={len(filtered_degrade)}, internal={len(internal_degrade)}, vendor={len(vendor_degrade)}, sum={len(internal_degrade)+len(vendor_degrade)}")
+        print(f"   Resolved: total={len(filtered_resolved)}, internal={len(internal_resolved)}, vendor={len(vendor_resolved)}, sum={len(internal_resolved)+len(vendor_resolved)}")
+        
         # Assignee 分布
         degrade_assignees_internal = manager.get_assignee_distribution(internal_degrade)
         degrade_assignees_vendor = manager.get_assignee_distribution(vendor_degrade)
         resolved_assignees_internal = manager.get_assignee_distribution(internal_resolved)
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
-        
-        # 週次統計（分內部和 Vendor）
-        degrade_weekly_internal = manager.analyze_by_week(internal_degrade, date_field='created')
-        degrade_weekly_vendor = manager.analyze_by_week(vendor_degrade, date_field='created')
-        resolved_weekly_internal = manager.analyze_by_week(internal_resolved, date_field='created')
-        resolved_weekly_vendor = manager.analyze_by_week(vendor_resolved, date_field='created')
         
         return jsonify({
             'success': True,
@@ -452,7 +518,7 @@ def export_excel():
             ('Issue Key', lambda i, f: i.get('key', '')),
             ('Assignee', lambda i, f: f.get('assignee', {}).get('displayName', 'Unassigned') if f.get('assignee') else 'Unassigned'),
             ('Created', lambda i, f: f.get('created', '')[:10] if f.get('created') else ''),
-            ('Week', lambda i, f: JiraDegradeManagerFast(site='', user='', password='').get_week_number(f.get('created', '')) if f.get('created') else ''),
+            ('Week', lambda i, f: f"{datetime.strptime(f.get('created', '')[:10], '%Y-%m-%d').isocalendar()[0]}-W{datetime.strptime(f.get('created', '')[:10], '%Y-%m-%d').isocalendar()[1]:02d}" if f.get('created') else ''),
             ('Source', lambda i, f: i.get('_source', 'unknown').upper())
         ]
         
@@ -513,7 +579,7 @@ def export_excel():
 
 @app.route('/api/export/html')
 def export_html():
-    """匯出 HTML - 靜態，保留 link"""
+    """匯出 HTML - 靜態，包含可點擊圖表"""
     try:
         data = get_data()
         if not data:
@@ -541,286 +607,427 @@ def export_html():
             token=JIRA_CONFIG['internal']['token']
         )
         
+        # 統計分析 - 全部使用 created
+        total_degrade = len(filtered_degrade)
+        total_resolved = len(filtered_resolved)
+        overall_percentage = (total_degrade / total_resolved * 100) if total_resolved > 0 else 0
+        
+        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
+        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='created')
+        weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
+        
+        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='created')
+        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
+        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='created')
+        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='created')
+        
         degrade_assignees_internal = manager.get_assignee_distribution(internal_degrade)
         degrade_assignees_vendor = manager.get_assignee_distribution(vendor_degrade)
         resolved_assignees_internal = manager.get_assignee_distribution(internal_resolved)
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
         
+        # 週次趨勢數據（最近 20 週）
+        recent_weekly = weekly_stats[-20:] if len(weekly_stats) > 20 else weekly_stats
+        trend_labels = json.dumps([w['week'] for w in recent_weekly])
+        trend_data = json.dumps([w['percentage'] for w in recent_weekly])
+        
+        # 週次數量對比數據
+        count_degrade = json.dumps([w['degrade_count'] for w in recent_weekly])
+        count_resolved = json.dumps([w['resolved_count'] for w in recent_weekly])
+        
+        # 週次分布數據（內部/Vendor）
+        all_weeks_internal = sorted(set(list(degrade_weekly_internal.keys()) + list(resolved_weekly_internal.keys())))[-20:]
+        all_weeks_vendor = sorted(set(list(degrade_weekly_vendor.keys()) + list(resolved_weekly_vendor.keys())))[-20:]
+        
+        weekly_internal_labels = json.dumps(all_weeks_internal)
+        weekly_internal_degrade = json.dumps([degrade_weekly_internal.get(w, {}).get('count', 0) for w in all_weeks_internal])
+        weekly_internal_resolved = json.dumps([resolved_weekly_internal.get(w, {}).get('count', 0) for w in all_weeks_internal])
+        
+        weekly_vendor_labels = json.dumps(all_weeks_vendor)
+        weekly_vendor_degrade = json.dumps([degrade_weekly_vendor.get(w, {}).get('count', 0) for w in all_weeks_vendor])
+        weekly_vendor_resolved = json.dumps([resolved_weekly_vendor.get(w, {}).get('count', 0) for w in all_weeks_vendor])
+        
+        # Assignee 數據（前 20 名）
+        degrade_assignees_internal_top = dict(sorted(degrade_assignees_internal.items(), key=lambda x: x[1], reverse=True)[:20])
+        degrade_assignees_vendor_top = dict(sorted(degrade_assignees_vendor.items(), key=lambda x: x[1], reverse=True)[:20])
+        resolved_assignees_internal_top = dict(sorted(resolved_assignees_internal.items(), key=lambda x: x[1], reverse=True)[:20])
+        resolved_assignees_vendor_top = dict(sorted(resolved_assignees_vendor.items(), key=lambda x: x[1], reverse=True)[:20])
+        
+        degrade_int_labels = json.dumps(list(degrade_assignees_internal_top.keys()))
+        degrade_int_data = json.dumps(list(degrade_assignees_internal_top.values()))
+        degrade_vnd_labels = json.dumps(list(degrade_assignees_vendor_top.keys()))
+        degrade_vnd_data = json.dumps(list(degrade_assignees_vendor_top.values()))
+        resolved_int_labels = json.dumps(list(resolved_assignees_internal_top.keys()))
+        resolved_int_data = json.dumps(list(resolved_assignees_internal_top.values()))
+        resolved_vnd_labels = json.dumps(list(resolved_assignees_vendor_top.keys()))
+        resolved_vnd_data = json.dumps(list(resolved_assignees_vendor_top.values()))
+        
         # 生成 HTML
-        html = f"""<!DOCTYPE html>
+        html_content = f"""
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JIRA Degrade % 分析報告 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</title>
+    <title>JIRA Degrade % 分析報告</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        body {{
-            font-family: 'Microsoft JhengHei', 'Segoe UI', Arial, sans-serif;
-            margin: 20px;
-            background: #f5f7fa;
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }}
+        
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        
         .container {{
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
+        }}
+        
+        .header {{
             background: white;
             padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
         }}
-        h1 {{
-            color: #2c3e50;
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 10px;
+        
+        .header h1 {{
+            color: #333;
+            font-size: 2.2em;
+            margin-bottom: 10px;
         }}
-        h2 {{
-            color: #34495e;
-            margin-top: 30px;
-            border-left: 4px solid #3498db;
-            padding-left: 10px;
+        
+        .header p {{
+            color: #666;
+            font-size: 1em;
         }}
+        
         .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
-            margin: 20px 0;
+            margin-bottom: 30px;
         }}
+        
         .stat-card {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             text-align: center;
         }}
+        
         .stat-card h3 {{
-            margin: 0 0 10px 0;
-            font-size: 0.9em;
-            opacity: 0.9;
+            color: #666;
+            font-size: 1em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
         }}
+        
         .stat-card .value {{
-            font-size: 2.5em;
+            font-size: 3em;
             font-weight: bold;
-            margin: 10px 0;
+            color: #667eea;
         }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
+        
+        .chart-container {{
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
         }}
-        th {{
-            background: #3498db;
-            color: white;
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
+        
+        .chart-container h2 {{
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
         }}
-        td {{
-            padding: 10px 12px;
-            border-bottom: 1px solid #ecf0f1;
+        
+        .chart-wrapper {{
+            position: relative;
+            height: 400px;
         }}
-        tr:hover {{
-            background: #f8f9fa;
-        }}
+        
         .badge {{
             display: inline-block;
-            padding: 4px 10px;
+            padding: 3px 10px;
             border-radius: 12px;
-            font-size: 0.85em;
-            font-weight: 600;
+            font-size: 0.7em;
+            margin-left: 10px;
         }}
+        
         .badge-internal {{
             background: #e3f2fd;
             color: #1976d2;
         }}
+        
         .badge-vendor {{
             background: #fff3e0;
             color: #f57c00;
-        }}
-        a {{
-            color: #3498db;
-            text-decoration: none;
-        }}
-        a:hover {{
-            text-decoration: underline;
-        }}
-        .filter-info {{
-            background: #ecf0f1;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
         }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📊 JIRA Degrade % 分析報告</h1>
-        <p>生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        
-        <div class="filter-info">
-            <strong>過濾條件:</strong>
-            日期範圍: {start_date or '不限'} ~ {end_date or '不限'} | 
-            Assignee: {owner or '全部'}
+        <div class="header">
+            <h1>📊 JIRA Degrade % 分析報告</h1>
+            <p>公版 SQA/QC Degrade 問題統計分析</p>
+            <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
+                生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            </p>
         </div>
         
         <div class="stats-grid">
             <div class="stat-card">
-                <h3>DEGRADE ISSUES</h3>
-                <div class="value">{len(filtered_degrade)}</div>
-                <div>內部: {len(internal_degrade)} | Vendor: {len(vendor_degrade)}</div>
+                <h3>Degrade Issues</h3>
+                <div class="value">{total_degrade}</div>
             </div>
             <div class="stat-card">
-                <h3>RESOLVED ISSUES</h3>
-                <div class="value">{len(filtered_resolved)}</div>
-                <div>內部: {len(internal_resolved)} | Vendor: {len(vendor_resolved)}</div>
+                <h3>Resolved Issues</h3>
+                <div class="value">{total_resolved}</div>
             </div>
             <div class="stat-card">
-                <h3>DEGRADE %</h3>
-                <div class="value">{(len(filtered_degrade) / len(filtered_resolved) * 100) if len(filtered_resolved) > 0 else 0:.2f}%</div>
-                <div>整體比例</div>
+                <h3>Degrade %</h3>
+                <div class="value">{overall_percentage:.2f}%</div>
             </div>
         </div>
         
-        <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Assignee</th>
-                    <th>Count</th>
-                    <th>Percentage</th>
-                    <th>Link</th>
-                </tr>
-            </thead>
-            <tbody>
-"""
+        <div class="chart-container">
+            <h2>📈 每週 Degrade % 趨勢</h2>
+            <div class="chart-wrapper">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
         
-        for name, count in sorted(degrade_assignees_internal.items(), key=lambda x: x[1], reverse=True)[:20]:
-            percentage = (count / len(internal_degrade) * 100) if len(internal_degrade) > 0 else 0
-            jql = f"filter={FILTERS['degrade']['internal']} AND assignee=\"{name}\""
-            if start_date:
-                jql += f" AND created >= \"{start_date}\""
-            if end_date:
-                jql += f" AND created <= \"{end_date}\""
-            url = f"https://{data['jira_sites']['internal']}/issues/?jql={jql}"
-            html += f"""
-                <tr>
-                    <td>{name}</td>
-                    <td>{count}</td>
-                    <td>{percentage:.2f}%</td>
-                    <td><a href="{url}" target="_blank">🔗 查看</a></td>
-                </tr>
-"""
+        <div class="chart-container">
+            <h2>📊 每週 Degrade vs Resolved 數量</h2>
+            <div class="chart-wrapper">
+                <canvas id="countChart"></canvas>
+            </div>
+        </div>
         
-        html += """
-            </tbody>
-        </table>
+        <div class="chart-container">
+            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper">
+                <canvas id="weeklyInternal"></canvas>
+            </div>
+        </div>
         
-        <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Assignee</th>
-                    <th>Count</th>
-                    <th>Percentage</th>
-                    <th>Link</th>
-                </tr>
-            </thead>
-            <tbody>
-"""
+        <div class="chart-container">
+            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper">
+                <canvas id="weeklyVendor"></canvas>
+            </div>
+        </div>
         
-        for name, count in sorted(degrade_assignees_vendor.items(), key=lambda x: x[1], reverse=True)[:20]:
-            percentage = (count / len(vendor_degrade) * 100) if len(vendor_degrade) > 0 else 0
-            jql = f"filter={FILTERS['degrade']['vendor']} AND assignee=\"{name}\""
-            if start_date:
-                jql += f" AND created >= \"{start_date}\""
-            if end_date:
-                jql += f" AND created <= \"{end_date}\""
-            url = f"https://{data['jira_sites']['vendor']}/issues/?jql={jql}"
-            html += f"""
-                <tr>
-                    <td>{name}</td>
-                    <td>{count}</td>
-                    <td>{percentage:.2f}%</td>
-                    <td><a href="{url}" target="_blank">🔗 查看</a></td>
-                </tr>
-"""
+        <div class="chart-container">
+            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper">
+                <canvas id="degradeAssigneeInternal"></canvas>
+            </div>
+        </div>
         
-        html += """
-            </tbody>
-        </table>
+        <div class="chart-container">
+            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper">
+                <canvas id="degradeAssigneeVendor"></canvas>
+            </div>
+        </div>
         
-        <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Assignee</th>
-                    <th>Count</th>
-                    <th>Percentage</th>
-                    <th>Link</th>
-                </tr>
-            </thead>
-            <tbody>
-"""
+        <div class="chart-container">
+            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper">
+                <canvas id="resolvedAssigneeInternal"></canvas>
+            </div>
+        </div>
         
-        for name, count in sorted(resolved_assignees_internal.items(), key=lambda x: x[1], reverse=True)[:20]:
-            percentage = (count / len(internal_resolved) * 100) if len(internal_resolved) > 0 else 0
-            jql = f"filter={FILTERS['resolved']['internal']} AND assignee=\"{name}\""
-            if start_date:
-                jql += f" AND created >= \"{start_date}\""
-            if end_date:
-                jql += f" AND created <= \"{end_date}\""
-            url = f"https://{data['jira_sites']['internal']}/issues/?jql={jql}"
-            html += f"""
-                <tr>
-                    <td>{name}</td>
-                    <td>{count}</td>
-                    <td>{percentage:.2f}%</td>
-                    <td><a href="{url}" target="_blank">🔗 查看</a></td>
-                </tr>
-"""
-        
-        html += """
-            </tbody>
-        </table>
-        
-        <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Assignee</th>
-                    <th>Count</th>
-                    <th>Percentage</th>
-                    <th>Link</th>
-                </tr>
-            </thead>
-            <tbody>
-"""
-        
-        for name, count in sorted(resolved_assignees_vendor.items(), key=lambda x: x[1], reverse=True)[:20]:
-            percentage = (count / len(vendor_resolved) * 100) if len(vendor_resolved) > 0 else 0
-            jql = f"filter={FILTERS['resolved']['vendor']} AND assignee=\"{name}\""
-            if start_date:
-                jql += f" AND created >= \"{start_date}\""
-            if end_date:
-                jql += f" AND created <= \"{end_date}\""
-            url = f"https://{data['jira_sites']['vendor']}/issues/?jql={jql}"
-            html += f"""
-                <tr>
-                    <td>{name}</td>
-                    <td>{count}</td>
-                    <td>{percentage:.2f}%</td>
-                    <td><a href="{url}" target="_blank">🔗 查看</a></td>
-                </tr>
-"""
-        
-        html += """
-            </tbody>
-        </table>
+        <div class="chart-container">
+            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper">
+                <canvas id="resolvedAssigneeVendor"></canvas>
+            </div>
+        </div>
     </div>
+    
+    <script>
+        // 趨勢圖
+        new Chart(document.getElementById('trendChart'), {{
+            type: 'line',
+            data: {{
+                labels: {trend_labels},
+                datasets: [{{
+                    label: 'Degrade %',
+                    data: {trend_data},
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false
+            }}
+        }});
+        
+        // 數量圖
+        new Chart(document.getElementById('countChart'), {{
+            type: 'bar',
+            data: {{
+                labels: {trend_labels},
+                datasets: [
+                    {{
+                        label: 'Degrade Issues',
+                        data: {count_degrade},
+                        backgroundColor: '#ff6b6b'
+                    }},
+                    {{
+                        label: 'Resolved Issues',
+                        data: {count_resolved},
+                        backgroundColor: '#51cf66'
+                    }}
+                ]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false
+            }}
+        }});
+        
+        // 週次分布 - 內部
+        new Chart(document.getElementById('weeklyInternal'), {{
+            type: 'bar',
+            data: {{
+                labels: {weekly_internal_labels},
+                datasets: [
+                    {{
+                        label: 'Degrade Issues',
+                        data: {weekly_internal_degrade},
+                        backgroundColor: '#ff6b6b'
+                    }},
+                    {{
+                        label: 'Resolved Issues',
+                        data: {weekly_internal_resolved},
+                        backgroundColor: '#51cf66'
+                    }}
+                ]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false
+            }}
+        }});
+        
+        // 週次分布 - Vendor
+        new Chart(document.getElementById('weeklyVendor'), {{
+            type: 'bar',
+            data: {{
+                labels: {weekly_vendor_labels},
+                datasets: [
+                    {{
+                        label: 'Degrade Issues',
+                        data: {weekly_vendor_degrade},
+                        backgroundColor: '#ff6b6b'
+                    }},
+                    {{
+                        label: 'Resolved Issues',
+                        data: {weekly_vendor_resolved},
+                        backgroundColor: '#51cf66'
+                    }}
+                ]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false
+            }}
+        }});
+        
+        // Assignee - Degrade Internal
+        new Chart(document.getElementById('degradeAssigneeInternal'), {{
+            type: 'bar',
+            data: {{
+                labels: {degrade_int_labels},
+                datasets: [{{
+                    label: 'Degrade Issues',
+                    data: {degrade_int_data},
+                    backgroundColor: '#ff6b6b'
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y'
+            }}
+        }});
+        
+        // Assignee - Degrade Vendor
+        new Chart(document.getElementById('degradeAssigneeVendor'), {{
+            type: 'bar',
+            data: {{
+                labels: {degrade_vnd_labels},
+                datasets: [{{
+                    label: 'Degrade Issues',
+                    data: {degrade_vnd_data},
+                    backgroundColor: '#ff6b6b'
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y'
+            }}
+        }});
+        
+        // Assignee - Resolved Internal
+        new Chart(document.getElementById('resolvedAssigneeInternal'), {{
+            type: 'bar',
+            data: {{
+                labels: {resolved_int_labels},
+                datasets: [{{
+                    label: 'Resolved Issues',
+                    data: {resolved_int_data},
+                    backgroundColor: '#51cf66'
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y'
+            }}
+        }});
+        
+        // Assignee - Resolved Vendor
+        new Chart(document.getElementById('resolvedAssigneeVendor'), {{
+            type: 'bar',
+            data: {{
+                labels: {resolved_vnd_labels},
+                datasets: [{{
+                    label: 'Resolved Issues',
+                    data: {resolved_vnd_data},
+                    backgroundColor: '#51cf66'
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y'
+            }}
+        }});
+    </script>
 </body>
 </html>
 """
         
-        # 儲存到記憶體
-        output = io.BytesIO(html.encode('utf-8'))
+        output = io.BytesIO(html_content.encode('utf-8'))
         output.seek(0)
         
         filename = f"jira_degrade_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
@@ -845,4 +1052,5 @@ if __name__ == '__main__':
     print("   ✅ 匯出 Excel（多頁籤）")
     print("   ✅ 匯出 HTML（靜態）")
     print("   ✅ UI 美化 + 載入動畫")
+    print("   ✅ 全部使用 created 日期")
     app.run(debug=True, host='0.0.0.0', port=5000)
