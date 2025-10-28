@@ -1240,13 +1240,14 @@
         
         // 匯出 HTML
         function exportHTML() {
-            // ✅ 使用 currentFilters 確保與頁面顯示一致
+            // ✅ 使用 currentFilters 和 chartLimit 確保與頁面顯示一致
             const params = new URLSearchParams();
             if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
             if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
             if (currentFilters.owner) params.append('owner', currentFilters.owner);
+            params.append('chart_limit', chartLimit);  // 新增：圖表顯示筆數
             
-            console.log('📤 匯出 HTML 的過濾條件:', currentFilters);
+            console.log('📤 匯出 HTML 的過濾條件:', currentFilters, 'chartLimit:', chartLimit);
             window.open('/api/export/html?' + params.toString(), '_blank');
         }
         
