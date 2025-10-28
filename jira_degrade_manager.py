@@ -48,33 +48,35 @@ class JiraDegradeManagerFast:
         else:
             raise ValueError(f"不支援的 HTTP 方法: {method}")
     
-    def get_filter_issues_fast(self, filter_id: str, max_results: int = 5000) -> List[Dict[str, Any]]:
+    def get_filter_issues_fast(self, filter_id: str, max_results: int = None) -> List[Dict[str, Any]]:
         """
         快速取得指定 filter 的所有 issues
         使用更大的 batch size 和優化的欄位
         
         Args:
             filter_id: JIRA filter ID
-            max_results: 最多取得幾筆資料
+            max_results: 最多取得幾筆資料 (None = 無上限，載入全部)
             
         Returns:
             issues 列表
         """
         all_issues = []
         start_at = 0
-        batch_size = 500  # 增加到 500，大幅減少請求次數！
+        batch_size = 500  # 每次抓 500 筆
         
         start_time = time.time()
         
         try:
-            while len(all_issues) < max_results:
+            while True:  # 改為無限迴圈，直到沒有更多資料
                 url = f"{self.base_url}/rest/api/2/search"
                 params = {
                     'jql': f'filter={filter_id}',
                     'startAt': start_at,
                     'maxResults': batch_size,
-                    # 只抓取需要的欄位，減少數據傳輸
-                    'fields': 'key,assignee,created'  # ← 改用 created
+                    # 抓取需要的欄位
+                    # created: 用於 Degrade issues
+                    # resolutiondate: 用於 Resolved issues
+                    'fields': 'key,assignee,created,resolutiondate'
                 }
                 
                 response = self._make_request(url, params=params, timeout=60)
@@ -95,6 +97,11 @@ class JiraDegradeManagerFast:
                 total = data.get('total', 0)
                 print(f"  📊 Filter {filter_id}: 已載入 {len(all_issues)}/{total} 筆")
                 
+                # 如果有設定上限且已達到，停止
+                if max_results and len(all_issues) >= max_results:
+                    break
+                
+                # 如果已經載入全部資料，停止
                 if start_at + batch_size >= total:
                     break
                 
@@ -102,7 +109,12 @@ class JiraDegradeManagerFast:
             
             elapsed = time.time() - start_time
             print(f"  ✓ Filter {filter_id} 完成: {len(all_issues)} 筆 ({elapsed:.1f}秒)")
-            return all_issues[:max_results]
+            
+            # 如果有上限，截斷結果；否則回傳全部
+            if max_results:
+                return all_issues[:max_results]
+            else:
+                return all_issues
             
         except Exception as e:
             print(f"  ❌ Filter {filter_id} 失敗: {str(e)}")

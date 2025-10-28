@@ -227,9 +227,9 @@ def get_stats():
         total_resolved = len(filtered_resolved)
         overall_percentage = (total_degrade / total_resolved * 100) if total_resolved > 0 else 0
         
-        # 每週統計：內部 + Vendor 合併
-        degrade_weekly = manager.analyze_by_week(filtered_degrade)
-        resolved_weekly = manager.analyze_by_week(filtered_resolved)
+        # 每週統計：全部使用 created 日期
+        degrade_weekly = manager.analyze_by_week(filtered_degrade, date_field='created')
+        resolved_weekly = manager.analyze_by_week(filtered_resolved, date_field='created')
         weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
         
         # Assignee 分布：拆分內部和 Vendor
