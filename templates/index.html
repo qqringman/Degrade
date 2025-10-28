@@ -220,13 +220,6 @@
             font-weight: bold;
             color: #667eea;
             margin-bottom: 5px;
-            cursor: pointer;
-            transition: color 0.3s;
-        }
-        
-        .stat-card .value:hover {
-            color: #764ba2;
-            text-decoration: underline;
         }
         
         .stat-card .sub-stats {
@@ -500,7 +493,7 @@
             <div class="stats-grid">
                 <div class="stat-card">
                     <h3>Degrade Issues</h3>
-                    <div class="value" id="degradeCount" onclick="openFilterInJira('degrade', 'all')">-</div>
+                    <div class="value" id="degradeCount">-</div>
                     <div class="label">問題總數</div>
                     <div class="sub-stats">
                         <div class="sub-stat">
@@ -515,7 +508,7 @@
                 </div>
                 <div class="stat-card">
                     <h3>Resolved Issues</h3>
-                    <div class="value" id="resolvedCount" onclick="openFilterInJira('resolved', 'all')">-</div>
+                    <div class="value" id="resolvedCount">-</div>
                     <div class="label">解題總數</div>
                     <div class="sub-stats">
                         <div class="sub-stat">
@@ -673,73 +666,30 @@
             }
         }
         
-        // ===== 新增：打開 Filter 的 JIRA 連結 =====
+        // ===== 新增：打開 Filter 的 JIRA 連結（用於紅框小數字）=====
         function openFilterInJira(type, source) {
             if (!jiraSites || !filterIds) {
                 alert('JIRA 設定尚未載入，請稍候');
                 return;
             }
             
-            let jql = '';
+            const site = jiraSites[source];
+            const filterId = filterIds[type][source];
             
-            if (source === 'all') {
-                // 合併內部和 Vendor 的 filter（使用 OR）
-                const internalFilterId = filterIds[type]['internal'];
-                const vendorFilterId = filterIds[type]['vendor'];
-                const internalSite = jiraSites.internal;
-                const vendorSite = jiraSites.vendor;
-                
-                // 因為兩個 JIRA 在不同的 site，我們只能打開其中一個
-                // 這裡優先打開內部 JIRA，並提示使用者
-                jql = `filter=${internalFilterId}`;
-                
-                if (currentFilters.start_date) {
-                    jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
-                }
-                if (currentFilters.end_date) {
-                    jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
-                }
-                if (currentFilters.owner) {
-                    jql += ` AND assignee="${currentFilters.owner}"`;
-                }
-                
-                const url = `https://${internalSite}/issues/?jql=${encodeURIComponent(jql)}`;
-                window.open(url, '_blank');
-                
-                // 同時打開 Vendor JIRA
-                let vendorJql = `filter=${vendorFilterId}`;
-                if (currentFilters.start_date) {
-                    vendorJql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
-                }
-                if (currentFilters.end_date) {
-                    vendorJql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
-                }
-                if (currentFilters.owner) {
-                    vendorJql += ` AND assignee="${currentFilters.owner}"`;
-                }
-                const vendorUrl = `https://${vendorSite}/issues/?jql=${encodeURIComponent(vendorJql)}`;
-                setTimeout(() => window.open(vendorUrl, '_blank'), 500);
-                
-            } else {
-                // 單一來源（internal 或 vendor）
-                const site = jiraSites[source];
-                const filterId = filterIds[type][source];
-                
-                jql = `filter=${filterId}`;
-                
-                if (currentFilters.start_date) {
-                    jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
-                }
-                if (currentFilters.end_date) {
-                    jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
-                }
-                if (currentFilters.owner) {
-                    jql += ` AND assignee="${currentFilters.owner}"`;
-                }
-                
-                const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
-                window.open(url, '_blank');
+            let jql = `filter=${filterId}`;
+            
+            if (currentFilters.start_date) {
+                jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
             }
+            if (currentFilters.end_date) {
+                jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+            }
+            if (currentFilters.owner) {
+                jql += ` AND assignee="${currentFilters.owner}"`;
+            }
+            
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
         }
         
         // 載入資料
