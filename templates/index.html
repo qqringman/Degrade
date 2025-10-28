@@ -542,7 +542,7 @@
             
             <!-- 週次 Degrade 分布圖 - 內部 -->
             <div class="chart-container">
-                <h2>📅 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <h2>📅 每週 Degrade vs Resolved 數量 <span class="badge badge-internal">內部 JIRA</span></h2>
                 <div class="chart-wrapper">
                     <canvas id="weeklyDegradeInternal"></canvas>
                 </div>
@@ -550,7 +550,7 @@
             
             <!-- 週次 Degrade 分布圖 - Vendor -->
             <div class="chart-container">
-                <h2>📅 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <h2>📅 每週 Degrade vs Resolved 數量 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div class="chart-wrapper">
                     <canvas id="weeklyDegradeVendor"></canvas>
                 </div>
@@ -1228,31 +1228,25 @@
         
         // 匯出 Excel
         function exportExcel() {
-            // 直接從表單讀取當前值
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            const owner = document.getElementById('ownerFilter').value;
-            
+            // ✅ 使用 currentFilters 確保與頁面顯示一致
             const params = new URLSearchParams();
-            if (startDate) params.append('start_date', startDate);
-            if (endDate) params.append('end_date', endDate);
-            if (owner) params.append('owner', owner);
+            if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
+            if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
+            if (currentFilters.owner) params.append('owner', currentFilters.owner);
             
+            console.log('📤 匯出 Excel 的過濾條件:', currentFilters);
             window.open('/api/export/excel?' + params.toString(), '_blank');
         }
         
         // 匯出 HTML
         function exportHTML() {
-            // 直接從表單讀取當前值
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            const owner = document.getElementById('ownerFilter').value;
-            
+            // ✅ 使用 currentFilters 確保與頁面顯示一致
             const params = new URLSearchParams();
-            if (startDate) params.append('start_date', startDate);
-            if (endDate) params.append('end_date', endDate);
-            if (owner) params.append('owner', owner);
+            if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
+            if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
+            if (currentFilters.owner) params.append('owner', currentFilters.owner);
             
+            console.log('📤 匯出 HTML 的過濾條件:', currentFilters);
             window.open('/api/export/html?' + params.toString(), '_blank');
         }
         
