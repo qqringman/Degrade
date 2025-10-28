@@ -161,8 +161,26 @@ def get_data():
     print("⚠ 快取無效，重新載入...")
     return load_data()
 
+def get_iso_week_dates(year, week):
+    """
+    根據 ISO 8601 標準計算指定年份和週次的起始和結束日期
+    ISO 週次規則：
+    - 每週從星期一開始，星期日結束
+    - 一年的第一週是包含該年第一個星期四的那一週
+    """
+    # 找到該年的第一天
+    jan_4 = datetime(year, 1, 4)  # ISO 規則：包含 1 月 4 日的週就是第一週
+    # 找到該週的星期一
+    week_1_monday = jan_4 - timedelta(days=jan_4.weekday())
+    # 計算目標週的星期一
+    target_monday = week_1_monday + timedelta(weeks=week - 1)
+    # 計算星期日
+    target_sunday = target_monday + timedelta(days=6)
+    
+    return target_monday, target_sunday
+
 def analyze_by_week_with_dates(issues, date_field='created'):
-    """統計週次分布，並返回每週的起始和結束日期"""
+    """統計週次分布，並返回每週的起始和結束日期（符合 ISO 8601 標準）"""
     weekly_stats = {}
     
     for issue in issues:
@@ -176,12 +194,13 @@ def analyze_by_week_with_dates(issues, date_field='created'):
             issue_date = datetime.strptime(date_str[:10], '%Y-%m-%d')
             # 計算 ISO 週次
             iso_calendar = issue_date.isocalendar()
-            week_key = f"{iso_calendar[0]}-W{iso_calendar[1]:02d}"
+            iso_year = iso_calendar[0]
+            iso_week = iso_calendar[1]
+            week_key = f"{iso_year}-W{iso_week:02d}"
             
             if week_key not in weekly_stats:
-                # 計算該週的起始日期（星期一）
-                week_start = issue_date - timedelta(days=issue_date.weekday())
-                week_end = week_start + timedelta(days=6)
+                # 使用正確的 ISO 週次計算方法
+                week_start, week_end = get_iso_week_dates(iso_year, iso_week)
                 
                 weekly_stats[week_key] = {
                     'count': 0,
@@ -370,6 +389,16 @@ def get_stats():
         degrade_assignees_vendor = manager.get_assignee_distribution(vendor_degrade)
         resolved_assignees_internal = manager.get_assignee_distribution(internal_resolved)
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
+        
+        # 週次統計 - 全部使用 created
+        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
+        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='created')
+        weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
+        
+        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='created')
+        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
+        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='created')
+        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='created')
         
         return jsonify({
             'success': True,

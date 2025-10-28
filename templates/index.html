@@ -612,6 +612,16 @@
         let chartLimit = 20; // 預設顯示筆數
         let cachedData = null; // 快取資料以便重繪圖表
         
+        // ===== 修復：儲存週次日期信息 =====
+        let weeklyDateRanges = {
+            degrade: {},      // 合併的 degrade 週次日期
+            resolved: {},     // 合併的 resolved 週次日期
+            degrade_internal: {},
+            degrade_vendor: {},
+            resolved_internal: {},
+            resolved_vendor: {}
+        };
+        
         // 顯示/隱藏 Loading
         function showLoading(show, message = '載入中...') {
             const overlay = document.getElementById('loadingOverlay');
@@ -665,6 +675,9 @@
                 jiraSites = data.jira_sites || {};
                 filterIds = data.filter_ids || {};
                 
+                // ===== 修復：儲存週次日期範圍 =====
+                storeWeeklyDateRanges(data);
+                
                 // 更新 currentFilters
                 currentFilters = {
                     start_date: filters.start_date || '',
@@ -695,6 +708,55 @@
                 document.getElementById('error').textContent = '錯誤: ' + error.message;
                 console.error('載入資料失敗:', error);
             }
+        }
+        
+        // ===== 修復：儲存週次日期範圍的函數 =====
+        function storeWeeklyDateRanges(data) {
+            // 從後端返回的 weekly_by_source 中提取日期範圍
+            weeklyDateRanges.degrade_internal = extractDateRanges(data.weekly_by_source.internal);
+            weeklyDateRanges.degrade_vendor = extractDateRanges(data.weekly_by_source.vendor);
+            weeklyDateRanges.resolved_internal = extractDateRanges(data.weekly_by_source_resolved.internal);
+            weeklyDateRanges.resolved_vendor = extractDateRanges(data.weekly_by_source_resolved.vendor);
+            
+            // 從 weekly 數據中提取（這是合併的數據，但我們需要從原始數據重建）
+            // 由於後端沒有直接返回合併的日期範圍，我們從 internal 和 vendor 合併
+            weeklyDateRanges.degrade = mergeWeeklyDateRanges(
+                weeklyDateRanges.degrade_internal,
+                weeklyDateRanges.degrade_vendor
+            );
+            weeklyDateRanges.resolved = mergeWeeklyDateRanges(
+                weeklyDateRanges.resolved_internal,
+                weeklyDateRanges.resolved_vendor
+            );
+        }
+        
+        function extractDateRanges(weeklyData) {
+            const ranges = {};
+            for (const week in weeklyData) {
+                if (weeklyData[week].start_date && weeklyData[week].end_date) {
+                    ranges[week] = {
+                        start_date: weeklyData[week].start_date,
+                        end_date: weeklyData[week].end_date
+                    };
+                }
+            }
+            return ranges;
+        }
+        
+        function mergeWeeklyDateRanges(ranges1, ranges2) {
+            const merged = {};
+            const allWeeks = new Set([...Object.keys(ranges1), ...Object.keys(ranges2)]);
+            
+            for (const week of allWeeks) {
+                // 使用任一來源的日期範圍（它們應該是相同的）
+                if (ranges1[week]) {
+                    merged[week] = ranges1[week];
+                } else if (ranges2[week]) {
+                    merged[week] = ranges2[week];
+                }
+            }
+            
+            return merged;
         }
         
         // 更新統計
@@ -886,60 +948,36 @@
             ctx.canvas.style.cursor = 'pointer';
         }
         
-        // 開啟週次的 JIRA（支援 degrade 和 resolved）- 全部使用 created
+        // ===== 修復：使用後端返回的正確日期範圍 =====
         function openWeekInJira(week, source, type) {
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
-            // 計算週的起始和結束日期
-            const [year, weekNum] = week.split('-W');
-            const weekStartDate = getDateOfISOWeek(parseInt(weekNum), parseInt(year));
-            const weekEndDate = new Date(weekStartDate);
-            weekEndDate.setDate(weekEndDate.getDate() + 6);
+            // 獲取後端返回的正確日期範圍
+            const dateRangesKey = `${type}_${source}`;
+            const dateRanges = weeklyDateRanges[dateRangesKey];
             
-            const weekStartStr = weekStartDate.toISOString().split('T')[0];
-            const weekEndStr = weekEndDate.toISOString().split('T')[0];
-            
-            // 建立 JQL - 全部使用 created 日期
-            let jql = `filter=${filterId}`;
-            
-            // 決定實際使用的日期範圍
-            let actualStartDate = weekStartStr;
-            let actualEndDate = weekEndStr;
-            
-            if (currentFilters.start_date || currentFilters.end_date) {
-                // 有用戶過濾 - 取交集
-                if (currentFilters.start_date && currentFilters.start_date > weekStartStr) {
-                    actualStartDate = currentFilters.start_date;
-                }
-                if (currentFilters.end_date && currentFilters.end_date < weekEndStr) {
-                    actualEndDate = currentFilters.end_date;
-                }
-                
-                // 添加日期條件到 JQL - 使用 created
-                jql += ` AND created >= "${actualStartDate}" AND created <= "${actualEndDate}"`;
-            } else {
-                // 沒有用戶過濾 - 只使用週次日期
-                jql += ` AND created >= "${weekStartStr}" AND created <= "${weekEndStr}"`;
+            if (!dateRanges || !dateRanges[week]) {
+                console.error(`找不到週次 ${week} 的日期範圍`);
+                alert(`無法找到週次 ${week} 的日期範圍，請重新載入頁面`);
+                return;
             }
             
-            // 如果有 owner 過濾，也加入
+            const weekStartStr = dateRanges[week].start_date;
+            const weekEndStr = dateRanges[week].end_date;
+            
+            console.log(`週次 ${week} 的日期範圍: ${weekStartStr} 到 ${weekEndStr}`);
+            
+            // 建立 JQL - 使用後端提供的正確日期範圍
+            let jql = `filter=${filterId} AND created >= "${weekStartStr}" AND created <= "${weekEndStr}"`;
+            
+            // 如果有用戶過濾，也加入
             if (currentFilters.owner) {
                 jql += ` AND assignee="${currentFilters.owner}"`;
             }
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
             window.open(url, '_blank');
-        }
-        
-        // 計算 ISO 週的起始日期
-        function getDateOfISOWeek(week, year) {
-            const simple = new Date(year, 0, 1 + (week - 1) * 7);
-            const dow = simple.getDay();
-            const ISOweekStart = simple;
-            if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
-            else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
-            return ISOweekStart;
         }
         
         // Assignee 圖表（可點擊）- 動態高度
