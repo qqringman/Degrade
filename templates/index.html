@@ -531,9 +531,22 @@
             const siteType = site.includes('vendorjira') ? 'vendor' : 'internal';
             const filterId = filterMap[type][siteType];
             
+            // 基本 JQL
             let jql = `filter=${filterId}`;
+            
+            // 加上 assignee 過濾
             if (assignee && assignee !== 'Unassigned') {
                 jql += ` AND assignee="${assignee}"`;
+            } else if (assignee === 'Unassigned') {
+                jql += ` AND assignee is EMPTY`;
+            }
+            
+            // 加上日期過濾（如果有設定）
+            if (currentFilters.start_date) {
+                jql += ` AND resolutiondate >= "${currentFilters.start_date}"`;
+            }
+            if (currentFilters.end_date) {
+                jql += ` AND resolutiondate <= "${currentFilters.end_date}"`;
             }
             
             return `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
