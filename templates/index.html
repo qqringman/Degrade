@@ -696,17 +696,24 @@
             const site = jiraSites[source];
             const filterId = filterIds[type][source];
             
+            // ✅ 修復：根據 type 使用不同的日期欄位
+            // - degrade 使用 created 日期
+            // - resolved 使用 resolutiondate 日期
+            let dateField = type === 'degrade' ? 'created' : 'resolutiondate';
             let jql = `filter=${filterId}`;
             
             if (currentFilters.start_date) {
-                jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
+                jql += ` AND ${dateField} >= "${currentFilters.start_date} 00:00"`;
             }
             if (currentFilters.end_date) {
-                jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+                jql += ` AND ${dateField} <= "${currentFilters.end_date} 23:59"`;
             }
             if (currentFilters.owner) {
                 jql += ` AND assignee="${currentFilters.owner}"`;
             }
+            
+            console.log(`開啟 JIRA Filter: type=${type}, source=${source}, dateField=${dateField}`);
+            console.log(`JQL: ${jql}`);
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
             window.open(url, '_blank');
