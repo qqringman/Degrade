@@ -409,11 +409,114 @@
             transition: width 0.3s;
         }
     </style>
+    <style>
+        /* 警告橫條樣式 */
+        .warning-banner {
+            display: none;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+            animation: slideDown 0.5s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .warning-banner.show {
+            display: block;
+        }
+
+        .warning-banner-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .warning-icon {
+            font-size: 1.5em;
+        }
+
+        .warning-list {
+            margin: 0;
+            padding-left: 30px;
+        }
+
+        .warning-item {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        .warning-link {
+            color: white;
+            text-decoration: underline;
+            font-weight: 600;
+            transition: opacity 0.3s;
+        }
+
+        .warning-link:hover {
+            opacity: 0.8;
+        }
+
+        .close-warning {
+            float: right;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: 0.3s;
+        }
+
+        .close-warning:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>    
 </head>
 <body>
+    <!-- JIRA 登入警告橫條 -->
+    <div id="jiraWarningBanner" style="display: none;">
+        <div style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); color: white; padding: 15px 20px; text-align: center; font-size: 0.95em; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
+            <div style="max-width: 1400px; margin: 0 auto;">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+                    <span style="font-size: 1.5em;">⚠️</span>
+                    <div id="warningMessage" style="flex: 1; min-width: 300px; text-align: left;"></div>
+                    <button onclick="document.getElementById('jiraWarningBanner').style.display='none'" 
+                            style="background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>    
     <div class="container">
         <!-- Header -->
         <div class="header">
+            <div id="warningBanner" class="warning-banner">
+                <button class="close-warning" onclick="closeWarning()">關閉</button>
+                <div class="warning-banner-header">
+                    <span class="warning-icon">⚠️</span>
+                    <span>JIRA 連線警告</span>
+                </div>
+                <ul class="warning-list" id="warningList">
+                    <!-- 動態插入警告項目 -->
+                </ul>
+            </div>            
             <div class="header-top">
                 <h1>
                     📊 JIRA Degrade % 分析儀表板
@@ -764,6 +867,15 @@
                 
                 // 繪製圖表
                 drawCharts(data);
+
+                // ✅ 新增：檢查並顯示警告
+                if (data.warnings && data.warnings.length > 0) {
+                    console.log('⚠️  檢測到 JIRA 載入警告:', data.warnings);
+                    showWarnings(data.warnings);
+                } else {
+                    // 沒有警告時，隱藏警告橫條
+                    document.getElementById('warningBanner').classList.remove('show');
+                }
                 
                 // 更新快取狀態
                 updateCacheStatus();
@@ -1449,6 +1561,60 @@
             
             loadData(currentFilters);
         });
+
+        function showWarnings(warnings) {
+            if (!warnings || warnings.length === 0) {
+                document.getElementById('warningBanner').classList.remove('show');
+                return;
+            }
+            
+            const warningList = document.getElementById('warningList');
+            warningList.innerHTML = '';
+            
+            warnings.forEach(warning => {
+                const li = document.createElement('li');
+                li.className = 'warning-item';
+                
+                // 根據來源決定網站
+                const siteUrl = `https://${warning.site}`;
+                const sourceName = warning.source === 'internal' ? '內部 JIRA' : 'Vendor JIRA';
+                const typeName = warning.type === 'degrade' ? 'Degrade' : 'Resolved';
+                
+                // 建立警告訊息
+                let errorMsg = '';
+                if (warning.error_type === 'AUTH_FAILED') {
+                    errorMsg = `${sourceName} (${typeName}) - 認證失敗，請先登入`;
+                } else if (warning.error_type === 'PERMISSION_DENIED') {
+                    errorMsg = `${sourceName} (${typeName}) - 權限不足，無法存取 Filter ${warning.filter_id}`;
+                } else if (warning.error_type === 'FILTER_NOT_FOUND') {
+                    errorMsg = `${sourceName} (${typeName}) - Filter 不存在 (${warning.filter_id})`;
+                } else if (warning.error_type === 'CONNECTION_ERROR') {
+                    errorMsg = `${sourceName} (${typeName}) - 無法連線到伺服器`;
+                } else if (warning.error_type === 'TIMEOUT') {
+                    errorMsg = `${sourceName} (${typeName}) - 連線逾時`;
+                } else {
+                    errorMsg = `${sourceName} (${typeName}) - ${warning.error}`;
+                }
+                
+                li.innerHTML = `
+                    <strong>${errorMsg}</strong>
+                    <br>
+                    <small>
+                        請先登入 <a href="${siteUrl}" target="_blank" class="warning-link">${warning.site}</a>
+                        ${warning.filter_id ? `(Filter ID: ${warning.filter_id})` : ''}
+                    </small>
+                `;
+                
+                warningList.appendChild(li);
+            });
+            
+            document.getElementById('warningBanner').classList.add('show');
+        }
+
+        // 關閉警告橫條
+        function closeWarning() {
+            document.getElementById('warningBanner').classList.remove('show');
+        }        
     </script>
 </body>
 </html>

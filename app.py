@@ -470,7 +470,8 @@ def get_stats():
                 },
                 'filter_ids': FILTERS,
                 'cache_age': cache.age(),
-                'load_time': data['metadata']['load_time']
+                'load_time': data['metadata']['load_time'],
+                'warnings': data['metadata'].get('warnings', [])
             }
         })
         
