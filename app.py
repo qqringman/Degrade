@@ -26,6 +26,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from urllib.parse import quote
 import json
+import socket
 
 # 載入環境變數
 load_dotenv()
@@ -1039,31 +1040,31 @@ def export_html():
         <div class="stats-grid">
             <div class="stat-card">
                 <h3>Degrade Issues</h3>
-                <div class="value">{total_degrade}</div>
+                <div class="value" id="degradeCount">{total_degrade}</div>
                 <div class="label">問題總數</div>
                 <div class="sub-stats">
                     <div class="sub-stat">
                         <div class="label">內部</div>
-                        <div class="value">{len(internal_degrade)}</div>
+                        <div class="value" onclick="openFilterInJira('degrade', 'internal')" style="cursor: pointer;">{len(internal_degrade)}</div>
                     </div>
                     <div class="sub-stat">
                         <div class="label">Vendor</div>
-                        <div class="value">{len(vendor_degrade)}</div>
+                        <div class="value" onclick="openFilterInJira('degrade', 'vendor')" style="cursor: pointer;">{len(vendor_degrade)}</div>
                     </div>
                 </div>
             </div>
             <div class="stat-card">
                 <h3>Resolved Issues</h3>
-                <div class="value">{total_resolved}</div>
+                <div class="value" id="resolvedCount">{total_resolved}</div>
                 <div class="label">解題總數</div>
                 <div class="sub-stats">
                     <div class="sub-stat">
                         <div class="label">內部</div>
-                        <div class="value">{len(internal_resolved)}</div>
+                        <div class="value" onclick="openFilterInJira('resolved', 'internal')" style="cursor: pointer;">{len(internal_resolved)}</div>
                     </div>
                     <div class="sub-stat">
                         <div class="label">Vendor</div>
-                        <div class="value">{len(vendor_resolved)}</div>
+                        <div class="value" onclick="openFilterInJira('resolved', 'vendor')" style="cursor: pointer;">{len(vendor_resolved)}</div>
                     </div>
                 </div>
             </div>
@@ -1165,7 +1166,31 @@ def export_html():
             resolved_internal: {date_ranges_resolved_internal_json},
             resolved_vendor: {date_ranges_resolved_vendor_json}
         }};
-        
+
+        function openFilterInJira(type, source) {{
+            const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+            const filterId = filterIds[type][source];
+            
+            let dateField = type === 'degrade' ? 'created' : 'resolutiondate';
+            let jql = `filter=${{filterId}}`;
+            
+            if (currentFilters.start_date) {{
+                jql += ` AND ${{dateField}} >= "${{currentFilters.start_date}} 00:00"`;
+            }}
+            if (currentFilters.end_date) {{
+                jql += ` AND ${{dateField}} <= "${{currentFilters.end_date}} 23:59"`;
+            }}
+            if (currentFilters.owner) {{
+                jql += ` AND assignee="${{currentFilters.owner}}"`;
+            }}
+            
+            console.log(`🔗 跳轉 JIRA: ${{type}} (${{source}})`);
+            console.log(`   JQL: ${{jql}}`);
+            
+            const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
+            window.open(url, '_blank');
+        }}
+
         function openWeekInJira(week, source, type) {{
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
@@ -1500,11 +1525,49 @@ def export_html():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def get_local_ip():
+    """取得本機 IP 位址"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        print(f"✅ 連接外部 IP: {ip}")
+        return ip
+    except Exception as e:
+        print(f"❌ 失敗: {e}")
+        return "127.0.0.1"
+
 if __name__ == '__main__':
-    print("🚀 啟動 JIRA Degrade 分析系統（修復版）...")
-    print("   修復內容:")
+    host = '0.0.0.0'
+    port = 5000
+    local_ip = get_local_ip()
+    
+    print("=" * 70)
+    print("🚀 JIRA Degrade 分析系統 - 啟動中...")
+    print("=" * 70)
+    print()
+    print("📊 系統資訊:")
+    print(f"   • 版本: v2.0 (2025-10-29)")
+    print(f"   • 作者: Vince")
+    print()
+    print("🔧 修復內容:")
     print("   ✅ Degrade issues 使用 created 日期")
     print("   ✅ Resolved issues 使用 resolutiondate 日期")
-    print("   ✅ 趨勢圖加入 resolved 數量線")
-    print("   ✅ 週次日期範圍計算精確")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    print("   ✅ 趨勢圖加入 resolved 數量線（雙 Y 軸）")
+    print("   ✅ 週次日期範圍計算精確化")
+    print("   ✅ 匯出 HTML 紅框連結可點擊")
+    print()
+    print("🌐 伺服器位址:")
+    print(f"   • 本機訪問: http://127.0.0.1:{port}")
+    print(f"   • 區域網路訪問: http://{local_ip}:{port}")
+    print()
+    print("💡 提示:")
+    print("   • 首次載入需要 30-60 秒")
+    print("   • 按 Ctrl+C 停止服務")
+    print("   • 查看 README.md 了解更多功能")
+    print()
+    print("=" * 70)
+    print()
+    
+    app.run(debug=True, host=host, port=port)

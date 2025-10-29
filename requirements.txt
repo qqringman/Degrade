@@ -1,3 +1,18 @@
+# Flask 相關套件
 Flask==3.0.0
+flask-cors==4.0.0
+
+# HTTP 請求
 requests==2.31.0
+
+# 環境變數管理
 python-dotenv==1.0.0
+
+# Excel 匯出
+openpyxl==3.1.2
+
+# 日期時間處理（Python 內建，不需安裝）
+# datetime
+
+# 並發處理（Python 內建，不需安裝）
+# concurrent.futures
