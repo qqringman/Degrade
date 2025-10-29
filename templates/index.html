@@ -432,7 +432,7 @@
                 </div>
             </div>
             
-            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（全部使用 updated 日期）</p>
+            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（Degrade 用 created date, Resolved 用 resolved date）</p>
             
             <div class="cache-indicator" id="cacheIndicator">
                 <div class="cache-dot"></div>
@@ -533,7 +533,11 @@
             
             <!-- 每週趨勢圖 -->
             <div class="chart-container">
-                <h2>📈 每週 Degrade % 趨勢（內部 + Vendor 合併）</h2>
+                <h2>📈 每週 Degrade % 與 Resolved 數量趨勢（內部 + Vendor 合併）</h2>
+                <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                    💡 左側 Y 軸：Degrade % | 右側 Y 軸：Resolved 數量
+                    <br>📅 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
+                </p>                
                 <div class="chart-wrapper">
                     <canvas id="trendChart"></canvas>
                 </div>
@@ -854,28 +858,112 @@
                 type: 'line',
                 data: {
                     labels: weeklyData.map(d => d.week),
-                    datasets: [{
-                        label: 'Degrade %',
-                        data: weeklyData.map(d => d.percentage),
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 5,
-                        pointHoverRadius: 7
-                    }]
+                    datasets: [
+                        {
+                            label: 'Degrade %',
+                            data: weeklyData.map(d => d.percentage),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            yAxisID: 'y'  // 左 Y 軸（百分比）
+                        },
+                        {
+                            label: 'Resolved 數量',
+                            data: weeklyData.map(d => d.resolved_count),
+                            borderColor: '#51cf66',
+                            backgroundColor: 'rgba(81, 207, 102, 0.1)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            yAxisID: 'y1'  // 右 Y 軸（數量）
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
                     plugins: {
-                        legend: { display: true }
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        if (context.datasetIndex === 0) {
+                                            // Degrade % 顯示百分比
+                                            label += context.parsed.y.toFixed(2) + '%';
+                                        } else {
+                                            // Resolved 數量顯示數字
+                                            label += context.parsed.y + ' issues';
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
                     },
                     scales: {
                         y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
                             beginAtZero: true,
-                            title: { display: true, text: 'Percentage (%)' }
+                            title: { 
+                                display: true, 
+                                text: 'Degrade %',
+                                color: '#667eea',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#667eea',
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { 
+                                display: true, 
+                                text: 'Resolved 數量',
+                                color: '#51cf66',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#51cf66'
+                            },
+                            grid: {
+                                drawOnChartArea: false  // 避免網格線重疊
+                            }
                         }
                     }
                 }
@@ -1004,14 +1092,15 @@
             const weekStartDate = dateRanges[week].start_date;
             const weekEndDate = dateRanges[week].end_date;
             
-            // ✅ 使用 updated 欄位，手動添加時間：開始 00:00，結束 23:59
-            let jql = `filter=${filterId} AND updated >= "${weekStartDate} 00:00" AND updated <= "${weekEndDate} 23:59"`;
+            // 根據 type 使用不同的日期欄位
+            let dateField = type === 'degrade' ? 'created' : 'resolutiondate';
+            let jql = `filter=${filterId} AND ${dateField} >= "${weekStartDate} 00:00" AND ${dateField} <= "${weekEndDate} 23:59"`;
             
             if (currentFilters.owner) {
                 jql += ` AND assignee="${currentFilters.owner}"`;
             }
             
-            console.log(`週次 ${week} 的 JQL: ${jql}`);
+            console.log(`週次 ${week} 的 JQL (${type}): ${jql}`);
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
             window.open(url, '_blank');
@@ -1108,15 +1197,15 @@
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
-            // 建立 JQL - 與後端過濾邏輯完全一致，使用 updated
+            // 根據 type 使用不同的日期欄位
+            let dateField = type === 'degrade' ? 'created' : 'resolutiondate';
             let jql = `filter=${filterId} AND assignee="${assigneeName}"`;
             
-            // 添加日期過濾（與後端一致）- 使用 updated，修改為絕對日期時間格式
             if (currentFilters.start_date) {
-                jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
+                jql += ` AND ${dateField} >= "${currentFilters.start_date} 00:00"`;
             }
             if (currentFilters.end_date) {
-                jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+                jql += ` AND ${dateField} <= "${currentFilters.end_date} 23:59"`;
             }
             
             const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;

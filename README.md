@@ -91,7 +91,7 @@ http://localhost:5000
 - 內部 SQA+QC degrade (Filter ID: 64959)
   - https://jira.realtek.com/issues/?filter=64959
 - Vendor QC Degrade (Filter ID: 22062)
-  - https://vendorjira.realtek.com/issues/?filter=22062
+  - https://vendorjira.realtek.com/issues/?filter=23919
 
 **分母（Resolved Issues）：**
 - 內部 all resolved issue (Filter ID: 64958)

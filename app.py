@@ -7,8 +7,9 @@ JIRA Degrade % 分析系統 - 修復版
 1. 解決合併數量與分開數量不一致的問題
 2. 修正週次日期範圍計算，確保與 JIRA 查詢一致
 3. 匯出 HTML 加入圖表顯示筆數和 Assignee 詳細分布表格
-4. 日期過濾改用 updated 欄位
-5. 圖表週期根據過濾日期動態呈現
+4. Degrade issues 使用 created 日期
+5. Resolved issues 使用 resolutiondate 日期
+6. 趨勢圖加入 resolved 數量線
 """
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -178,11 +179,14 @@ def get_iso_week_dates(year, week):
     
     return target_monday, target_sunday
 
-def analyze_by_week_with_dates(issues, date_field='updated'):
+def analyze_by_week_with_dates(issues, date_field='created'):
     """
     統計週次分布，並返回每週的起始和結束日期（符合 ISO 8601 標準）
     修正：準確計算週次邊界，包含整天的 issues
-    預設使用 updated 日期
+    
+    Args:
+        issues: issue 列表
+        date_field: 要使用的日期欄位（'created' 或 'resolutiondate'）
     """
     weekly_stats = {}
     
@@ -232,7 +236,7 @@ def analyze_by_week_with_dates(issues, date_field='updated'):
     return weekly_stats
 
 def calculate_weekly_percentage(degrade_weekly, resolved_weekly):
-    """計算每週百分比"""
+    """計算每週百分比，並加入 degrade 和 resolved 的實際數量"""
     all_weeks = sorted(set(list(degrade_weekly.keys()) + list(resolved_weekly.keys())))
     
     weekly_stats = []
@@ -250,8 +254,17 @@ def calculate_weekly_percentage(degrade_weekly, resolved_weekly):
     
     return weekly_stats
 
-def filter_issues(issues, start_date, end_date, owner):
-    """過濾 issues - 使用 updated 日期"""
+def filter_issues(issues, start_date, end_date, owner, date_field='created'):
+    """
+    過濾 issues
+    
+    Args:
+        issues: issue 列表
+        start_date: 開始日期
+        end_date: 結束日期
+        owner: Assignee 名稱
+        date_field: 要使用的日期欄位（'created' 或 'resolutiondate'）
+    """
     filtered = []
     
     # 確保 issues 是列表
@@ -267,16 +280,16 @@ def filter_issues(issues, start_date, end_date, owner):
             
         fields = issue.get('fields', {})
         
-        # 日期過濾 - 使用 updated
+        # 日期過濾 - 使用指定的日期欄位
         if start_date or end_date:
-            updated_date = fields.get('updated')
-            if updated_date:
+            date_value = fields.get(date_field)
+            if date_value:
                 try:
                     # 解析日期（處理時間部分）
-                    if 'T' in updated_date:
-                        issue_date = datetime.fromisoformat(updated_date.replace('Z', '+00:00').split('.')[0])
+                    if 'T' in date_value:
+                        issue_date = datetime.fromisoformat(date_value.replace('Z', '+00:00').split('.')[0])
                     else:
-                        issue_date = datetime.strptime(updated_date[:10], '%Y-%m-%d')
+                        issue_date = datetime.strptime(date_value[:10], '%Y-%m-%d')
                     
                     if start_date:
                         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
@@ -289,7 +302,7 @@ def filter_issues(issues, start_date, end_date, owner):
                         if issue_date > end_dt:
                             continue
                 except Exception as e:
-                    print(f"⚠️  日期解析錯誤: {e} (issue: {issue.get('key')}, date: {updated_date})")
+                    print(f"⚠️  日期解析錯誤: {e} (issue: {issue.get('key')}, date: {date_value})")
                     pass
         
         # Owner 過濾
@@ -337,13 +350,13 @@ def get_stats():
         print(f"📊 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
         print(f"📊 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         
-        # 過濾資料 - 全部使用 updated 日期
-        filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner)
-        filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner)
+        # 過濾資料 - degrade 使用 created，resolved 使用 resolutiondate
+        filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner, date_field='created')
+        filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner, date_field='resolutiondate')
         
         print(f"📊 過濾後: degrade={len(filtered_degrade)}, resolved={len(filtered_resolved)}")
         
-        # ===== 修復問題 1：確保所有 issues 都有正確的 _source 標記（在分離之前） =====
+        # 確保所有 issues 都有正確的 _source 標記
         missing_degrade = [i for i in filtered_degrade if i.get('_source') not in ['internal', 'vendor']]
         missing_resolved = [i for i in filtered_resolved if i.get('_source') not in ['internal', 'vendor']]
         
@@ -352,10 +365,8 @@ def get_stats():
             for issue in missing_degrade:
                 if 'vendorjira' in issue.get('self', '').lower():
                     issue['_source'] = 'vendor'
-                    print(f"   - {issue.get('key')}: 標記為 vendor")
                 else:
                     issue['_source'] = 'internal'
-                    print(f"   - {issue.get('key')}: 標記為 internal")
         
         if missing_resolved:
             print(f"⚠️  警告: 有 {len(missing_resolved)} 個 resolved issues 沒有正確的 _source 標記，正在修復...")
@@ -365,22 +376,16 @@ def get_stats():
                 else:
                     issue['_source'] = 'internal'
         
-        # 現在所有 issues 都應該有正確的 _source 標記了，進行分離
+        # 分離內部和 Vendor
         internal_degrade = [i for i in filtered_degrade if i.get('_source') == 'internal']
         vendor_degrade = [i for i in filtered_degrade if i.get('_source') == 'vendor']
         internal_resolved = [i for i in filtered_resolved if i.get('_source') == 'internal']
         vendor_resolved = [i for i in filtered_resolved if i.get('_source') == 'vendor']
         
-        # ===== 驗證數量一致性 =====
+        # 驗證數量一致性
         print(f"📊 分離驗證:")
         print(f"   Degrade: total={len(filtered_degrade)}, internal={len(internal_degrade)}, vendor={len(vendor_degrade)}, sum={len(internal_degrade)+len(vendor_degrade)}")
         print(f"   Resolved: total={len(filtered_resolved)}, internal={len(internal_resolved)}, vendor={len(vendor_resolved)}, sum={len(internal_resolved)+len(vendor_resolved)}")
-        
-        # 檢查是否有數量不一致
-        if len(internal_degrade) + len(vendor_degrade) != len(filtered_degrade):
-            print(f"❌ 錯誤: Degrade 數量不一致！")
-        if len(internal_resolved) + len(vendor_resolved) != len(filtered_resolved):
-            print(f"❌ 錯誤: Resolved 數量不一致！")
         
         # 收集所有 assignees
         all_owners = set()
@@ -410,26 +415,15 @@ def get_stats():
         resolved_assignees_internal = manager.get_assignee_distribution(internal_resolved)
         resolved_assignees_vendor = manager.get_assignee_distribution(vendor_resolved)
         
-        # ===== 修復問題 2：使用精確的日期時間進行週次統計 =====
-        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='updated')
-        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='updated')
+        # 週次統計 - degrade 使用 created，resolved 使用 resolutiondate
+        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
+        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='resolutiondate')
         weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
         
-        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='updated')
-        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='updated')
-        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='updated')
-        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='updated')
-        
-        # ===== 驗證週次數量一致性 =====
-        print(f"\n📊 週次數量驗證:")
-        for week in sorted(set(list(degrade_weekly.keys()) + list(degrade_weekly_internal.keys()) + list(degrade_weekly_vendor.keys()))):
-            total_count = degrade_weekly.get(week, {}).get('count', 0)
-            internal_count = degrade_weekly_internal.get(week, {}).get('count', 0)
-            vendor_count = degrade_weekly_vendor.get(week, {}).get('count', 0)
-            sum_count = internal_count + vendor_count
-            
-            if total_count != sum_count:
-                print(f"   ⚠️  {week}: total={total_count}, internal={internal_count}, vendor={vendor_count}, sum={sum_count} - 不一致！")
+        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='created')
+        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
+        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='resolutiondate')
+        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='resolutiondate')
         
         return jsonify({
             'success': True,
@@ -522,8 +516,8 @@ def export_excel():
         owner = request.args.get('owner')
         
         # 過濾資料
-        filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner)
-        filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner)
+        filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner, date_field='created')
+        filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner, date_field='resolutiondate')
         
         # 建立 Excel
         wb = Workbook()
@@ -573,22 +567,30 @@ def export_excel():
             
             return ws
         
-        # 定義欄位 - 使用 updated 日期
-        issue_columns = [
+        # 定義欄位 - degrade 使用 created，resolved 使用 resolutiondate
+        degrade_columns = [
             ('Issue Key', lambda i, f: i.get('key', '')),
             ('Assignee', lambda i, f: f.get('assignee', {}).get('displayName', 'Unassigned') if f.get('assignee') else 'Unassigned'),
-            ('Updated', lambda i, f: f.get('updated', '')[:10] if f.get('updated') else ''),
-            ('Week', lambda i, f: f"{datetime.strptime(f.get('updated', '')[:10], '%Y-%m-%d').isocalendar()[0]}-W{datetime.strptime(f.get('updated', '')[:10], '%Y-%m-%d').isocalendar()[1]:02d}" if f.get('updated') else ''),
+            ('Created', lambda i, f: f.get('created', '')[:10] if f.get('created') else ''),
+            ('Week', lambda i, f: f"{datetime.strptime(f.get('created', '')[:10], '%Y-%m-%d').isocalendar()[0]}-W{datetime.strptime(f.get('created', '')[:10], '%Y-%m-%d').isocalendar()[1]:02d}" if f.get('created') else ''),
+            ('Source', lambda i, f: i.get('_source', 'unknown').upper())
+        ]
+        
+        resolved_columns = [
+            ('Issue Key', lambda i, f: i.get('key', '')),
+            ('Assignee', lambda i, f: f.get('assignee', {}).get('displayName', 'Unassigned') if f.get('assignee') else 'Unassigned'),
+            ('Resolved Date', lambda i, f: f.get('resolutiondate', '')[:10] if f.get('resolutiondate') else ''),
+            ('Week', lambda i, f: f"{datetime.strptime(f.get('resolutiondate', '')[:10], '%Y-%m-%d').isocalendar()[0]}-W{datetime.strptime(f.get('resolutiondate', '')[:10], '%Y-%m-%d').isocalendar()[1]:02d}" if f.get('resolutiondate') else ''),
             ('Source', lambda i, f: i.get('_source', 'unknown').upper())
         ]
         
         # 建立工作表
-        create_sheet(wb, 'Degrade All', filtered_degrade, issue_columns)
-        create_sheet(wb, 'Degrade Internal', filtered_degrade, issue_columns, 'internal')
-        create_sheet(wb, 'Degrade Vendor', filtered_degrade, issue_columns, 'vendor')
-        create_sheet(wb, 'Resolved All', filtered_resolved, issue_columns)
-        create_sheet(wb, 'Resolved Internal', filtered_resolved, issue_columns, 'internal')
-        create_sheet(wb, 'Resolved Vendor', filtered_resolved, issue_columns, 'vendor')
+        create_sheet(wb, 'Degrade All', filtered_degrade, degrade_columns)
+        create_sheet(wb, 'Degrade Internal', filtered_degrade, degrade_columns, 'internal')
+        create_sheet(wb, 'Degrade Vendor', filtered_degrade, degrade_columns, 'vendor')
+        create_sheet(wb, 'Resolved All', filtered_resolved, resolved_columns)
+        create_sheet(wb, 'Resolved Internal', filtered_resolved, resolved_columns, 'internal')
+        create_sheet(wb, 'Resolved Vendor', filtered_resolved, resolved_columns, 'vendor')
         
         # 統計摘要
         ws_summary = wb.create_sheet(title='Summary', index=0)
@@ -601,6 +603,10 @@ def export_excel():
             ['Resolved Issues (Internal)', len([i for i in filtered_resolved if i.get('_source') == 'internal'])],
             ['Resolved Issues (Vendor)', len([i for i in filtered_resolved if i.get('_source') == 'vendor'])],
             ['Degrade %', f"{(len(filtered_degrade) / len(filtered_resolved) * 100) if len(filtered_resolved) > 0 else 0:.2f}%"],
+            ['', ''],
+            ['說明', ''],
+            ['Degrade Issues', '使用 created 日期'],
+            ['Resolved Issues', '使用 resolutiondate 日期'],
         ]
         
         for row_idx, (label, value) in enumerate(summary_data, 1):
@@ -649,13 +655,13 @@ def export_html():
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         owner = request.args.get('owner')
-        chart_limit = int(request.args.get('chart_limit', 20))  # 新增：圖表顯示筆數
+        chart_limit = int(request.args.get('chart_limit', 20))  # 圖表顯示筆數
         
         print(f"📤 匯出 HTML: chart_limit={chart_limit}")
         
-        # 過濾資料
-        filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner)
-        filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner)
+        # 過濾資料 - degrade 使用 created，resolved 使用 resolutiondate
+        filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner, date_field='created')
+        filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner, date_field='resolutiondate')
         
         # 修復 _source 標記
         for issue in filtered_degrade:
@@ -685,19 +691,19 @@ def export_html():
             token=JIRA_CONFIG['internal']['token']
         )
         
-        # 統計分析 - 全部使用 updated
+        # 統計分析 - degrade 使用 created，resolved 使用 resolutiondate
         total_degrade = len(filtered_degrade)
         total_resolved = len(filtered_resolved)
         overall_percentage = (total_degrade / total_resolved * 100) if total_resolved > 0 else 0
         
-        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='updated')
-        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='updated')
+        degrade_weekly = analyze_by_week_with_dates(filtered_degrade, date_field='created')
+        resolved_weekly = analyze_by_week_with_dates(filtered_resolved, date_field='resolutiondate')
         weekly_stats = calculate_weekly_percentage(degrade_weekly, resolved_weekly)
         
-        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='updated')
-        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='updated')
-        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='updated')
-        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='updated')
+        degrade_weekly_internal = analyze_by_week_with_dates(internal_degrade, date_field='created')
+        degrade_weekly_vendor = analyze_by_week_with_dates(vendor_degrade, date_field='created')
+        resolved_weekly_internal = analyze_by_week_with_dates(internal_resolved, date_field='resolutiondate')
+        resolved_weekly_vendor = analyze_by_week_with_dates(vendor_resolved, date_field='resolutiondate')
         
         degrade_assignees_internal = manager.get_assignee_distribution(internal_degrade)
         degrade_assignees_vendor = manager.get_assignee_distribution(vendor_degrade)
@@ -708,7 +714,7 @@ def export_html():
         trend_labels = json.dumps([w['week'] for w in weekly_stats])
         trend_data = json.dumps([w['percentage'] for w in weekly_stats])
         
-        # 週次數量對比數據
+        # 週次數量對比數據 - 新增 resolved_count
         count_degrade = json.dumps([w['degrade_count'] for w in weekly_stats])
         count_resolved = json.dumps([w['resolved_count'] for w in weekly_stats])
         
@@ -724,7 +730,7 @@ def export_html():
         weekly_vendor_degrade = json.dumps([degrade_weekly_vendor.get(w, {}).get('count', 0) for w in all_weeks_vendor])
         weekly_vendor_resolved = json.dumps([resolved_weekly_vendor.get(w, {}).get('count', 0) for w in all_weeks_vendor])
         
-        # ===== 新增：依據 chart_limit 限制 Assignee 數據 =====
+        # 依據 chart_limit 限制 Assignee 數據
         degrade_assignees_internal_top = dict(sorted(degrade_assignees_internal.items(), key=lambda x: x[1], reverse=True)[:chart_limit])
         degrade_assignees_vendor_top = dict(sorted(degrade_assignees_vendor.items(), key=lambda x: x[1], reverse=True)[:chart_limit])
         resolved_assignees_internal_top = dict(sorted(resolved_assignees_internal.items(), key=lambda x: x[1], reverse=True)[:chart_limit])
@@ -739,7 +745,7 @@ def export_html():
         resolved_vnd_labels = json.dumps(list(resolved_assignees_vendor_top.keys()))
         resolved_vnd_data = json.dumps(list(resolved_assignees_vendor_top.values()))
         
-        # ===== 準備週次日期範圍數據（用於 JIRA 跳轉）=====
+        # 準備週次日期範圍數據（用於 JIRA 跳轉）
         weekly_date_ranges_degrade_internal = {}
         for week, stats in degrade_weekly_internal.items():
             weekly_date_ranges_degrade_internal[week] = {
@@ -793,7 +799,7 @@ def export_html():
             'owner': owner or ''
         })
         
-        # ===== 新增：準備表格數據（依據 chart_limit）=====
+        # 準備表格數據
         def generate_assignee_table_html(assignee_dict, source, type_name, chart_limit):
             """生成 Assignee 表格 HTML"""
             sorted_data = sorted(assignee_dict.items(), key=lambda x: x[1], reverse=True)[:chart_limit]
@@ -801,6 +807,9 @@ def export_html():
             
             site = data['jira_sites'][source]
             filter_id = FILTERS[type_name][source]
+            
+            # 根據 type 使用不同的日期欄位
+            date_field = 'created' if type_name == 'degrade' else 'resolutiondate'
             
             html = '<table style="width: 100%; border-collapse: collapse;">'
             html += '<thead><tr style="background: #667eea; color: white;">'
@@ -813,12 +822,12 @@ def export_html():
             for index, (name, count) in enumerate(sorted_data, 1):
                 percentage = (count / total * 100) if total > 0 else 0
                 
-                # 建立 JIRA 連結 - 使用 updated
+                # 建立 JIRA 連結 - 使用對應的日期欄位
                 jql = f'filter={filter_id} AND assignee="{name}"'
                 if start_date:
-                    jql += f' AND updated >= "{start_date} 00:00"'
+                    jql += f' AND {date_field} >= "{start_date} 00:00"'
                 if end_date:
-                    jql += f' AND updated <= "{end_date} 23:59"'
+                    jql += f' AND {date_field} <= "{end_date} 23:59"'
                 
                 url = f"https://{site}/issues/?jql={quote(jql)}"
                 
@@ -1014,9 +1023,12 @@ def export_html():
     <div class="container">
         <div class="header">
             <h1>📊 JIRA Degrade % 分析報告</h1>
-            <p>公版 SQA/QC Degrade 問題統計分析（使用 updated 日期）</p>
+            <p>公版 SQA/QC Degrade 問題統計分析</p>
             <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
                 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 圖表顯示筆數: {chart_limit}
+            </p>
+            <p style="margin-top: 5px; font-size: 0.85em; color: #999;">
+                📅 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
             </p>
         </div>
         
@@ -1028,6 +1040,7 @@ def export_html():
             <div class="stat-card">
                 <h3>Degrade Issues</h3>
                 <div class="value">{total_degrade}</div>
+                <div class="label">問題總數</div>
                 <div class="sub-stats">
                     <div class="sub-stat">
                         <div class="label">內部</div>
@@ -1042,6 +1055,7 @@ def export_html():
             <div class="stat-card">
                 <h3>Resolved Issues</h3>
                 <div class="value">{total_resolved}</div>
+                <div class="label">解題總數</div>
                 <div class="sub-stats">
                     <div class="sub-stat">
                         <div class="label">內部</div>
@@ -1056,11 +1070,15 @@ def export_html():
             <div class="stat-card">
                 <h3>Degrade %</h3>
                 <div class="value">{overall_percentage:.2f}%</div>
+                <div class="label">整體比例</div>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>📈 每週 Degrade % 趨勢</h2>
+            <h2>📈 每週 Degrade % 與 Resolved 數量趨勢</h2>
+            <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                💡 左側 Y 軸：Degrade % | 右側 Y 軸：Resolved 數量
+            </p>
             <div class="chart-wrapper">
                 <canvas id="trendChart"></canvas>
             </div>
@@ -1115,7 +1133,6 @@ def export_html():
             </div>
         </div>
         
-        <!-- ===== 新增：Assignee 詳細分布表格 ===== -->
         <div class="table-container">
             <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_degrade_internal}
@@ -1138,12 +1155,10 @@ def export_html():
     </div>
     
     <script>
-        // ===== 全域變數設定 =====
         const jiraSites = {jira_sites_json};
         const filterIds = {filter_ids_json};
         const currentFilters = {current_filters_json};
         
-        // 週次日期範圍
         const weeklyDateRanges = {{
             degrade_internal: {date_ranges_degrade_internal_json},
             degrade_vendor: {date_ranges_degrade_vendor_json},
@@ -1151,7 +1166,6 @@ def export_html():
             resolved_vendor: {date_ranges_resolved_vendor_json}
         }};
         
-        // ===== JIRA 跳轉函數 =====
         function openWeekInJira(week, source, type) {{
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
@@ -1167,13 +1181,15 @@ def export_html():
             const weekStartDate = dateRanges[week].start_date;
             const weekEndDate = dateRanges[week].end_date;
             
-            let jql = `filter=${{filterId}} AND updated >= "${{weekStartDate}} 00:00" AND updated <= "${{weekEndDate}} 23:59"`;
+            // 根據 type 使用不同的日期欄位
+            const dateField = type === 'degrade' ? 'created' : 'resolutiondate';
+            let jql = `filter=${{filterId}} AND ${{dateField}} >= "${{weekStartDate}} 00:00" AND ${{dateField}} <= "${{weekEndDate}} 23:59"`;
             
             if (currentFilters.owner) {{
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
             }}
             
-            console.log(`🔗 跳轉 JIRA: 週次 ${{week}} (${{source}})`);
+            console.log(`🔗 跳轉 JIRA: 週次 ${{week}} (${{source}}, ${{type}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -1184,58 +1200,118 @@ def export_html():
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
             const filterId = filterIds[type][source];
             
+            // 根據 type 使用不同的日期欄位
+            const dateField = type === 'degrade' ? 'created' : 'resolutiondate';
             let jql = `filter=${{filterId}} AND assignee="${{assigneeName}}"`;
             
             if (currentFilters.start_date) {{
-                jql += ` AND updated >= "${{currentFilters.start_date}} 00:00"`;
+                jql += ` AND ${{dateField}} >= "${{currentFilters.start_date}} 00:00"`;
             }}
             if (currentFilters.end_date) {{
-                jql += ` AND updated <= "${{currentFilters.end_date}} 23:59"`;
+                jql += ` AND ${{dateField}} <= "${{currentFilters.end_date}} 23:59"`;
             }}
             
-            console.log(`🔗 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}})`);
+            console.log(`🔗 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}}, ${{type}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
             window.open(url, '_blank');
         }}
         
-        // ===== 圖表繪製 =====
-        
-        // 趨勢圖
+        // 趨勢圖 - 雙線（Degrade % + Resolved 數量）
         new Chart(document.getElementById('trendChart'), {{
             type: 'line',
             data: {{
                 labels: {trend_labels},
-                datasets: [{{
-                    label: 'Degrade %',
-                    data: {trend_data},
-                    borderColor: '#667eea',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 5,
-                    pointHoverRadius: 7
-                }}]
+                datasets: [
+                    {{
+                        label: 'Degrade %',
+                        data: {trend_data},
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        yAxisID: 'y'
+                    }},
+                    {{
+                        label: 'Resolved 數量',
+                        data: {count_resolved},
+                        borderColor: '#51cf66',
+                        backgroundColor: 'rgba(81, 207, 102, 0.1)',
+                        borderWidth: 3,
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        yAxisID: 'y1'
+                    }}
+                ]
             }},
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: {{
+                    mode: 'index',
+                    intersect: false
+                }},
                 plugins: {{
-                    legend: {{ display: true }},
+                    legend: {{ 
+                        display: true,
+                        position: 'top'
+                    }},
                     tooltip: {{
                         callbacks: {{
                             label: function(context) {{
-                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
+                                let label = context.dataset.label || '';
+                                if (label) {{
+                                    label += ': ';
+                                }}
+                                if (context.parsed.y !== null) {{
+                                    if (context.datasetIndex === 0) {{
+                                        label += context.parsed.y.toFixed(2) + '%';
+                                    }} else {{
+                                        label += context.parsed.y + ' issues';
+                                    }}
+                                }}
+                                return label;
                             }}
                         }}
                     }}
                 }},
                 scales: {{
                     y: {{
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
                         beginAtZero: true,
-                        title: {{ display: true, text: 'Percentage (%)' }}
+                        title: {{ 
+                            display: true, 
+                            text: 'Degrade %',
+                            color: '#667eea'
+                        }},
+                        ticks: {{
+                            color: '#667eea'
+                        }}
+                    }},
+                    y1: {{
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        beginAtZero: true,
+                        title: {{ 
+                            display: true, 
+                            text: 'Resolved 數量',
+                            color: '#51cf66'
+                        }},
+                        ticks: {{
+                            color: '#51cf66'
+                        }},
+                        grid: {{
+                            drawOnChartArea: false
+                        }}
                     }}
                 }}
             }}
@@ -1394,54 +1470,13 @@ def export_html():
             }});
         }}
         
-        // Assignee 圖表 - Degrade Internal（可點擊）
-        drawAssigneeChart(
-            'degradeAssigneeInternal',
-            {degrade_int_labels},
-            {degrade_int_data},
-            'Degrade Issues',
-            '#ff6b6b',
-            'internal',
-            'degrade'
-        );
+        // Assignee 圖表
+        drawAssigneeChart('degradeAssigneeInternal', {degrade_int_labels}, {degrade_int_data}, 'Degrade Issues', '#ff6b6b', 'internal', 'degrade');
+        drawAssigneeChart('degradeAssigneeVendor', {degrade_vnd_labels}, {degrade_vnd_data}, 'Degrade Issues', '#ff6b6b', 'vendor', 'degrade');
+        drawAssigneeChart('resolvedAssigneeInternal', {resolved_int_labels}, {resolved_int_data}, 'Resolved Issues', '#51cf66', 'internal', 'resolved');
+        drawAssigneeChart('resolvedAssigneeVendor', {resolved_vnd_labels}, {resolved_vnd_data}, 'Resolved Issues', '#51cf66', 'vendor', 'resolved');
         
-        // Assignee 圖表 - Degrade Vendor（可點擊）
-        drawAssigneeChart(
-            'degradeAssigneeVendor',
-            {degrade_vnd_labels},
-            {degrade_vnd_data},
-            'Degrade Issues',
-            '#ff6b6b',
-            'vendor',
-            'degrade'
-        );
-        
-        // Assignee 圖表 - Resolved Internal（可點擊）
-        drawAssigneeChart(
-            'resolvedAssigneeInternal',
-            {resolved_int_labels},
-            {resolved_int_data},
-            'Resolved Issues',
-            '#51cf66',
-            'internal',
-            'resolved'
-        );
-        
-        // Assignee 圖表 - Resolved Vendor（可點擊）
-        drawAssigneeChart(
-            'resolvedAssigneeVendor',
-            {resolved_vnd_labels},
-            {resolved_vnd_data},
-            'Resolved Issues',
-            '#51cf66',
-            'vendor',
-            'resolved'
-        );
-        
-        console.log('✅ 所有圖表已載入，圖表可點擊跳轉到 JIRA');
-        console.log('📊 JIRA Sites:', jiraSites);
-        console.log('📋 Filter IDs:', filterIds);
-        console.log('📊 圖表顯示筆數:', {chart_limit});
+        console.log('✅ 所有圖表已載入');
     </script>
 </body>
 </html>
@@ -1468,10 +1503,8 @@ def export_html():
 if __name__ == '__main__':
     print("🚀 啟動 JIRA Degrade 分析系統（修復版）...")
     print("   修復內容:")
-    print("   ✅ 解決合併數量與分開數量不一致的問題")
-    print("   ✅ 修正週次日期範圍計算，確保與 JIRA 查詢一致")
-    print("   ✅ 結束日期使用 23:59:59，包含當天所有時間")
-    print("   ✅ 全部使用 updated 日期")
-    print("   ✅ 匯出 HTML 加入圖表顯示筆數和 Assignee 詳細分布表格")
-    print("   ✅ 圖表週期根據過濾日期動態呈現")
+    print("   ✅ Degrade issues 使用 created 日期")
+    print("   ✅ Resolved issues 使用 resolutiondate 日期")
+    print("   ✅ 趨勢圖加入 resolved 數量線")
+    print("   ✅ 週次日期範圍計算精確")
     app.run(debug=True, host='0.0.0.0', port=5000)
