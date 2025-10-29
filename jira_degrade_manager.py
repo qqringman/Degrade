@@ -51,32 +51,38 @@ class JiraDegradeManagerFast:
             return requests.post(url, **kwargs)
         else:
             raise ValueError(f"不支援的 HTTP 方法: {method}")
-    
+        
     def get_filter_issues_fast(self, filter_id: str, max_results: int = None) -> Dict[str, Any]:
         """
         快速取得指定 filter 的所有 issues
-        使用更大的 batch size 和優化的欄位
-        
-        Args:
-            filter_id: JIRA filter ID
-            max_results: 最多取得幾筆資料 (None = 無上限，載入全部)
-            
-        Returns:
-            dict: {
-                'success': bool,
-                'issues': List[Dict],
-                'error': str (optional),
-                'error_type': str (optional)
-            }
         """
         all_issues = []
         start_at = 0
-        batch_size = 500  # 每次抓 500 筆
+        batch_size = 500
+        filter_owner = None  # 初始為 None
         
         start_time = time.time()
         
         try:
-            while True:  # 改為無限迴圈，直到沒有更多資料
+            # ✅ 嘗試取得 filter 資訊（包含 owner）
+            try:
+                filter_url = f"{self.base_url}/rest/api/2/filter/{filter_id}"
+                filter_response = self._make_request(filter_url, timeout=10)
+                if filter_response.status_code == 200:
+                    filter_data = filter_response.json()
+                    owner_info = filter_data.get('owner', {})
+                    filter_owner = owner_info.get('displayName') or owner_info.get('name')
+                    if filter_owner:
+                        print(f"  📋 Filter {filter_id} owner: {filter_owner}")
+            except Exception as e:
+                print(f"  ⚠️  無法取得 Filter {filter_id} 的 owner 資訊: {e}")
+            
+            # ✅ 如果無法取得 filter owner，使用連線帳號作為 fallback
+            if not filter_owner:
+                filter_owner = self.user  # 使用連線的帳號
+                print(f"  📋 Filter {filter_id} 使用連線帳號: {filter_owner}")
+            
+            while True:
                 url = f"{self.base_url}/rest/api/2/search"
                 params = {
                     'jql': f'filter={filter_id}',
@@ -97,7 +103,8 @@ class JiraDegradeManagerFast:
                         'error': error_msg,
                         'error_type': 'AUTH_FAILED',
                         'site': self.site,
-                        'filter_id': filter_id
+                        'filter_id': filter_id,
+                        'filter_owner': filter_owner or self.user  # ✅ 確保有值
                     }
                 
                 # 檢查權限不足
@@ -110,7 +117,8 @@ class JiraDegradeManagerFast:
                         'error': error_msg,
                         'error_type': 'PERMISSION_DENIED',
                         'site': self.site,
-                        'filter_id': filter_id
+                        'filter_id': filter_id,
+                        'filter_owner': filter_owner or self.user  # ✅ 確保有值
                     }
                 
                 # 檢查 filter 不存在
@@ -123,10 +131,11 @@ class JiraDegradeManagerFast:
                         'error': error_msg,
                         'error_type': 'FILTER_NOT_FOUND',
                         'site': self.site,
-                        'filter_id': filter_id
+                        'filter_id': filter_id,
+                        'filter_owner': filter_owner or self.user  # ✅ 確保有值
                     }
                 
-                # 其他 HTTP 錯誤
+                # 其他 HTTP 錯誤（包含 HTTP 500）
                 if response.status_code != 200:
                     error_msg = f"HTTP {response.status_code}"
                     print(f"  ❌ Filter {filter_id} 失敗: {error_msg}")
@@ -136,7 +145,8 @@ class JiraDegradeManagerFast:
                         'error': error_msg,
                         'error_type': 'HTTP_ERROR',
                         'site': self.site,
-                        'filter_id': filter_id
+                        'filter_id': filter_id,
+                        'filter_owner': filter_owner or self.user  # ✅ 確保有值
                     }
                 
                 data = response.json()
@@ -147,15 +157,12 @@ class JiraDegradeManagerFast:
                 
                 all_issues.extend(issues)
                 
-                # 檢查是否還有更多資料
                 total = data.get('total', 0)
                 print(f"  📊 Filter {filter_id}: 已載入 {len(all_issues)}/{total} 筆")
                 
-                # 如果有設定上限且已達到，停止
                 if max_results and len(all_issues) >= max_results:
                     break
                 
-                # 如果已經載入全部資料，停止
                 if start_at + batch_size >= total:
                     break
                 
@@ -164,13 +171,13 @@ class JiraDegradeManagerFast:
             elapsed = time.time() - start_time
             print(f"  ✓ Filter {filter_id} 完成: {len(all_issues)} 筆 ({elapsed:.1f}秒)")
             
-            # 如果有上限，截斷結果；否則回傳全部
             final_issues = all_issues[:max_results] if max_results else all_issues
             return {
                 'success': True,
                 'issues': final_issues,
                 'site': self.site,
-                'filter_id': filter_id
+                'filter_id': filter_id,
+                'filter_owner': filter_owner or self.user  # ✅ 確保有值
             }
             
         except requests.exceptions.Timeout:
@@ -182,7 +189,8 @@ class JiraDegradeManagerFast:
                 'error': error_msg,
                 'error_type': 'TIMEOUT',
                 'site': self.site,
-                'filter_id': filter_id
+                'filter_id': filter_id,
+                'filter_owner': filter_owner or self.user  # ✅ 確保有值
             }
         except requests.exceptions.ConnectionError:
             error_msg = f"無法連線到 {self.site}"
@@ -193,7 +201,8 @@ class JiraDegradeManagerFast:
                 'error': error_msg,
                 'error_type': 'CONNECTION_ERROR',
                 'site': self.site,
-                'filter_id': filter_id
+                'filter_id': filter_id,
+                'filter_owner': filter_owner or self.user  # ✅ 確保有值
             }
         except Exception as e:
             error_msg = str(e)
@@ -204,7 +213,8 @@ class JiraDegradeManagerFast:
                 'error': error_msg,
                 'error_type': 'UNKNOWN_ERROR',
                 'site': self.site,
-                'filter_id': filter_id
+                'filter_id': filter_id,
+                'filter_owner': filter_owner or self.user  # ✅ 確保有值
             }
     
     def get_week_number(self, date_str: str) -> str:
@@ -338,6 +348,7 @@ def load_all_filters_parallel(jira_configs, filters):
                         'type': type_name,
                         'site': result.get('site', ''),
                         'filter_id': result.get('filter_id', ''),
+                        'filter_owner': result.get('filter_owner', 'Unknown'),
                         'error': result.get('error', '未知錯誤'),
                         'error_type': result.get('error_type', 'UNKNOWN_ERROR')
                     }

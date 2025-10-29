@@ -876,7 +876,7 @@
                     // 沒有警告時，隱藏警告橫條
                     document.getElementById('warningBanner').classList.remove('show');
                 }
-                
+
                 // 更新快取狀態
                 updateCacheStatus();
                 
@@ -1580,14 +1580,19 @@
                 const sourceName = warning.source === 'internal' ? '內部 JIRA' : 'Vendor JIRA';
                 const typeName = warning.type === 'degrade' ? 'Degrade' : 'Resolved';
                 
+                // ✅ 取得 owner 資訊
+                const ownerName = warning.filter_owner || 'Unknown';
+                
                 // 建立警告訊息
                 let errorMsg = '';
                 if (warning.error_type === 'AUTH_FAILED') {
-                    errorMsg = `${sourceName} (${typeName}) - 認證失敗，請先登入`;
+                    errorMsg = `${sourceName} (${typeName}) - 認證失敗`;
                 } else if (warning.error_type === 'PERMISSION_DENIED') {
-                    errorMsg = `${sourceName} (${typeName}) - 權限不足，無法存取 Filter ${warning.filter_id}`;
+                    errorMsg = `${sourceName} (${typeName}) - 權限不足`;
                 } else if (warning.error_type === 'FILTER_NOT_FOUND') {
-                    errorMsg = `${sourceName} (${typeName}) - Filter 不存在 (${warning.filter_id})`;
+                    errorMsg = `${sourceName} (${typeName}) - Filter 不存在`;
+                } else if (warning.error_type === 'HTTP_ERROR') {
+                    errorMsg = `${sourceName} (${typeName}) - ${warning.error}`;
                 } else if (warning.error_type === 'CONNECTION_ERROR') {
                     errorMsg = `${sourceName} (${typeName}) - 無法連線到伺服器`;
                 } else if (warning.error_type === 'TIMEOUT') {
@@ -1596,12 +1601,13 @@
                     errorMsg = `${sourceName} (${typeName}) - ${warning.error}`;
                 }
                 
+                // ✅ 在訊息中顯示 owner
                 li.innerHTML = `
                     <strong>${errorMsg}</strong>
                     <br>
                     <small>
-                        請先登入 <a href="${siteUrl}" target="_blank" class="warning-link">${warning.site}</a>
-                        ${warning.filter_id ? `(Filter ID: ${warning.filter_id})` : ''}
+                        請 <strong><font color="yellow">${ownerName}</font></strong> 先登入 <font color="blue"><a href="${siteUrl}" target="_blank">${warning.site}</a></font>
+                        ${warning.filter_id ? `(Filter ID: <font color="blue"><a href="${siteUrl}/issues/?filter=${warning.filter_id}" target="_blank">${warning.filter_id}</a></font>)` : ''}
                     </small>
                 `;
                 
