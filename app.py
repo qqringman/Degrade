@@ -1075,11 +1075,13 @@ def export_html():
             </div>
         </div>
         
+        <!-- 每週趨勢圖 -->
         <div class="chart-container">
-            <h2>📈 每週 Degrade % 與 Resolved 數量趨勢</h2>
-            <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
-                💡 左側 Y 軸：Degrade % | 右側 Y 軸：Resolved 數量
-            </p>
+            <h2>📈 每週 Degrade % 與 軸：Degrade & Resolved 數量趨勢（內部 + Vendor 合併）</h2>
+            <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & Resolved 數量
+                <br>📅 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
+            </p>                
             <div class="chart-wrapper">
                 <canvas id="trendChart"></canvas>
             </div>
@@ -1243,23 +1245,23 @@ def export_html():
             window.open(url, '_blank');
         }}
         
-        // 趨勢圖 - 雙線（Degrade % + Resolved 數量）
+        // 趨勢圖 - 三條線（Degrade 數量 + Resolved 數量 + Degrade % 參考線）
         new Chart(document.getElementById('trendChart'), {{
             type: 'line',
             data: {{
                 labels: {trend_labels},
                 datasets: [
                     {{
-                        label: 'Degrade %',
-                        data: {trend_data},
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        label: 'Degrade 數量',
+                        data: {count_degrade},
+                        borderColor: '#ff6b6b',
+                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
                         borderWidth: 3,
                         fill: true,
                         tension: 0.4,
                         pointRadius: 5,
                         pointHoverRadius: 7,
-                        yAxisID: 'y'
+                        yAxisID: 'y1'
                     }},
                     {{
                         label: 'Resolved 數量',
@@ -1272,6 +1274,20 @@ def export_html():
                         pointRadius: 5,
                         pointHoverRadius: 7,
                         yAxisID: 'y1'
+                    }},
+                    {{
+                        label: 'Degrade % (參考)',
+                        data: {trend_data},
+                        borderColor: '#667eea',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        yAxisID: 'y2',
+                        hidden: false
                     }}
                 ]
             }},
@@ -1285,7 +1301,11 @@ def export_html():
                 plugins: {{
                     legend: {{ 
                         display: true,
-                        position: 'top'
+                        position: 'top',
+                        labels: {{
+                            usePointStyle: true,
+                            padding: 15
+                        }}
                     }},
                     tooltip: {{
                         callbacks: {{
@@ -1295,7 +1315,7 @@ def export_html():
                                     label += ': ';
                                 }}
                                 if (context.parsed.y !== null) {{
-                                    if (context.datasetIndex === 0) {{
+                                    if (context.datasetIndex === 2) {{
                                         label += context.parsed.y.toFixed(2) + '%';
                                     }} else {{
                                         label += context.parsed.y + ' issues';
@@ -1309,16 +1329,20 @@ def export_html():
                 scales: {{
                     y: {{
                         type: 'linear',
-                        display: true,
+                        display: false,
                         position: 'left',
                         beginAtZero: true,
                         title: {{ 
                             display: true, 
-                            text: 'Degrade %',
-                            color: '#667eea'
+                            text: 'Degrade 數量',
+                            color: '#ff6b6b',
+                            font: {{
+                                size: 14,
+                                weight: 'bold'
+                            }}
                         }},
                         ticks: {{
-                            color: '#667eea'
+                            color: '#ff6b6b'
                         }}
                     }},
                     y1: {{
@@ -1329,11 +1353,37 @@ def export_html():
                         title: {{ 
                             display: true, 
                             text: 'Resolved 數量',
-                            color: '#51cf66'
+                            color: '#51cf66',
+                            font: {{
+                                size: 14,
+                                weight: 'bold'
+                            }}
                         }},
                         ticks: {{
                             color: '#51cf66'
                         }},
+                        grid: {{
+                            drawOnChartArea: false
+                        }}
+                    }},
+                    y2: {{
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        beginAtZero: true,
+                        title: {{ 
+                            display: true, 
+                            text: 'Degrade %',
+                            color: '#667eea',
+                            font: {{
+                                size: 14,
+                                weight: 'bold'
+                            }}
+                        }},
+                        ticks: {{
+                            color: '#667eea'
+                        }},
+                        max: 100,
                         grid: {{
                             drawOnChartArea: false
                         }}

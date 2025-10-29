@@ -533,9 +533,9 @@
             
             <!-- 每週趨勢圖 -->
             <div class="chart-container">
-                <h2>📈 每週 Degrade % 與 Resolved 數量趨勢（內部 + Vendor 合併）</h2>
+                <h2>📈 每週 Degrade % 與 軸：Degrade & Resolved 數量趨勢（內部 + Vendor 合併）</h2>
                 <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                    💡 左側 Y 軸：Degrade % | 右側 Y 軸：Resolved 數量
+                    💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & Resolved 數量
                     <br>📅 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
                 </p>                
                 <div class="chart-wrapper">
@@ -883,16 +883,16 @@
                     labels: weeklyData.map(d => d.week),
                     datasets: [
                         {
-                            label: 'Degrade %',
-                            data: weeklyData.map(d => d.percentage),
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            label: 'Degrade 數量',
+                            data: weeklyData.map(d => d.degrade_count),
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
                             borderWidth: 3,
                             fill: true,
                             tension: 0.4,
                             pointRadius: 5,
                             pointHoverRadius: 7,
-                            yAxisID: 'y'  // 左 Y 軸（百分比）
+                            yAxisID: 'y1'
                         },
                         {
                             label: 'Resolved 數量',
@@ -904,7 +904,21 @@
                             tension: 0.4,
                             pointRadius: 5,
                             pointHoverRadius: 7,
-                            yAxisID: 'y1'  // 右 Y 軸（數量）
+                            yAxisID: 'y1'
+                        },
+                        {
+                            label: 'Degrade % (參考)',
+                            data: weeklyData.map(d => d.percentage),
+                            borderColor: '#667eea',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [5, 5],  // 虛線
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            yAxisID: 'y2',
+                            hidden: false  // 預設顯示，可在圖例中關閉
                         }
                     ]
                 },
@@ -932,11 +946,11 @@
                                         label += ': ';
                                     }
                                     if (context.parsed.y !== null) {
-                                        if (context.datasetIndex === 0) {
-                                            // Degrade % 顯示百分比
+                                        if (context.datasetIndex === 2) {
+                                            // 百分比
                                             label += context.parsed.y.toFixed(2) + '%';
                                         } else {
-                                            // Resolved 數量顯示數字
+                                            // 數量
                                             label += context.parsed.y + ' issues';
                                         }
                                     }
@@ -948,23 +962,20 @@
                     scales: {
                         y: {
                             type: 'linear',
-                            display: true,
+                            display: false,
                             position: 'left',
                             beginAtZero: true,
                             title: { 
                                 display: true, 
-                                text: 'Degrade %',
-                                color: '#667eea',
+                                text: 'Degrade 數量',
+                                color: '#ff6b6b',
                                 font: {
                                     size: 14,
                                     weight: 'bold'
                                 }
                             },
                             ticks: {
-                                color: '#667eea',
-                                callback: function(value) {
-                                    return value + '%';
-                                }
+                                color: '#ff6b6b'
                             }
                         },
                         y1: {
@@ -985,7 +996,29 @@
                                 color: '#51cf66'
                             },
                             grid: {
-                                drawOnChartArea: false  // 避免網格線重疊
+                                drawOnChartArea: false
+                            }
+                        },
+                        y2: {
+                            type: 'linear',
+                            display: true,  // 隱藏第三個軸
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { 
+                                display: true, 
+                                text: 'Degrade %',
+                                color: '#667eea',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#667eea'
+                            },                                                     
+                            max: 100,  // 百分比最大值
+                            grid: {
+                                drawOnChartArea: false
                             }
                         }
                     }
