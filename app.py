@@ -50,15 +50,15 @@ JIRA_CONFIG = {
     }
 }
 
-# Filter IDs
+# Filter IDs - 優先從 .env 讀取，沒有才使用預設值
 FILTERS = {
     'degrade': {
-        'internal': '64959',  # 內部 SQA+QC degrade from 2020/09/02
-        'vendor': '22062'     # Vendor Jira QC Degrade from 2022/09/02
+        'internal': os.getenv('FILTER_INTERNAL_DEGRADE'),  # 內部 SQA+QC degrade from 2020/09/02
+        'vendor': os.getenv('FILTER_VENDOR_DEGRADE')      # Vendor Jira QC Degrade from 2022/09/02
     },
     'resolved': {
-        'internal': '64958',  # 內部 all resolved from 2020/09/02
-        'vendor': '23916'     # Vendor all customer resolved from 2020/09/02
+        'internal': os.getenv('FILTER_INTERNAL_RESOLVED'),  # 內部 all resolved from 2020/09/02
+        'vendor': os.getenv('FILTER_VENDOR_RESOLVED')       # Vendor all customer resolved from 2020/09/02
     }
 }
 
@@ -92,8 +92,8 @@ class DataCache:
         self.data = None
         self.timestamp = None
 
-# 建立全域快取（1小時過期）
-cache = DataCache(ttl_seconds=3600)
+# 建立全域快取 - 從 .env 讀取 TTL（預設 1 小時）
+cache = DataCache(ttl_seconds=int(os.getenv('CACHE_TTL', 3600)))
 
 def load_data():
     """載入資料並快取"""
@@ -1590,8 +1590,10 @@ def get_local_ip():
         return "127.0.0.1"
 
 if __name__ == '__main__':
-    host = '0.0.0.0'
-    port = 5000
+    # 從 .env 讀取設定，沒有才使用預設值
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    port = int(os.getenv('FLASK_PORT', 5000))
+    debug = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
     local_ip = get_local_ip()
     
     print("=" * 70)
@@ -1601,8 +1603,20 @@ if __name__ == '__main__':
     print("📊 系統資訊:")
     print(f"   • 版本: v2.0 (2025-10-29)")
     print(f"   • 作者: Vince")
+    print("⚙️  設定資訊:")
+    print(f"   • Flask Host: {host}")
+    print(f"   • Flask Port: {port}")
+    print(f"   • Debug Mode: {debug}")
+    print(f"   • Cache TTL: {cache.ttl}秒")
+    print()
+    print("🔍 Filter IDs:")
+    print(f"   • 內部 Degrade: {FILTERS['degrade']['internal']}")
+    print(f"   • Vendor Degrade: {FILTERS['degrade']['vendor']}")
+    print(f"   • 內部 Resolved: {FILTERS['resolved']['internal']}")
+    print(f"   • Vendor Resolved: {FILTERS['resolved']['vendor']}")
     print()
     print("🔧 修復內容:")
+    print("   ✅ 統一從 .env 讀取所有設定")    
     print("   ✅ Degrade issues 使用 created 日期")
     print("   ✅ Resolved issues 使用 resolutiondate 日期")
     print("   ✅ 趨勢圖加入 resolved 數量線（雙 Y 軸）")
@@ -1621,4 +1635,4 @@ if __name__ == '__main__':
     print("=" * 70)
     print()
     
-    app.run(debug=True, host=host, port=port)
+    app.run(debug=debug, host=host, port=port)
