@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCC Degrade % 分析儀表板</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        /* Header 樣式 */
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+        
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 2.2em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .fast-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 0.4em;
+            vertical-align: middle;
+        }
+        
+        /* 按鈕組 */
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn-success {
+            background: #00b894;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #00cec9;
+        }
+        
+        .btn-info {
+            background: #74b9ff;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background: #0984e3;
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* 快取指示器 */
+        .cache-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #d4edda;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+        
+        .cache-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* 過濾面板 */
+        .filter-panel {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: flex-end;
+        }
+        
+        .filter-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        /* 新增：按鈕容器 - 水平排列 */
+        .filter-buttons {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .filter-item label {
+            font-size: 0.9em;
+            color: #666;
+            font-weight: 600;
+        }
+        
+        .date-input, .owner-select, .limit-select {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.95em;
+            min-width: 150px;
+            transition: border-color 0.3s;
+        }
+        
+        .date-input:focus, .owner-select:focus, .limit-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        /* 統計卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            transition: transform 0.3s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .stat-card h3 {
+            color: #666;
+            font-size: 1em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-card .value {
+            font-size: 3em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .sub-stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        .stat-card .sub-stat .label {
+            font-size: 0.8em;
+            color: #999;
+        }
+        
+        .stat-card .sub-stat .value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #667eea;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        
+        .stat-card .sub-stat .value:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        /* 圖表容器 */
+        .chart-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+        
+        .chart-container h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+        
+        /* 動態高度的圖表容器 */
+        .chart-wrapper-dynamic {
+            position: relative;
+            min-height: 400px;
+        }
+        
+        /* Loading 動畫 */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(102, 126, 234, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 6px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: white;
+            font-size: 1.2em;
+            margin-top: 20px;
+        }
+        
+        .loading-progress {
+            color: white;
+            font-size: 0.9em;
+            margin-top: 10px;
+            opacity: 0.8;
+        }
+        
+        /* Badge */
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.7em;
+            margin-left: 10px;
+            font-weight: normal;
+        }
+        
+        .badge-internal {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .badge-vendor {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        
+        /* 表格 */
+        .table-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+        
+        .table-card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #667eea;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        tr:hover {
+            background: #f5f5f5;
+        }
+        
+        .jira-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .jira-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        /* 錯誤訊息 */
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            transition: width 0.3s;
+        }
+    </style>
+    <style>
+        /* 警告橫條樣式 */
+        .warning-banner {
+            display: none;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+            animation: slideDown 0.5s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .warning-banner.show {
+            display: block;
+        }
+
+        .warning-banner-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+
+        .warning-icon {
+            font-size: 1.5em;
+        }
+
+        .warning-list {
+            margin: 0;
+            padding-left: 30px;
+        }
+
+        .warning-item {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        .warning-link {
+            color: white;
+            text-decoration: underline;
+            font-weight: 600;
+            transition: opacity 0.3s;
+        }
+
+        .warning-link:hover {
+            opacity: 0.8;
+        }
+
+        .close-warning {
+            float: right;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: 0.3s;
+        }
+
+        .close-warning:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>    
+</head>
+<body>
+    <!-- JIRA 登入警告橫條 -->
+    <div id="jiraWarningBanner" style="display: none;">
+        <div style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); color: white; padding: 15px 20px; text-align: center; font-size: 0.95em; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
+            <div style="max-width: 1400px; margin: 0 auto;">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+                    <span style="font-size: 1.5em;">⚠️</span>
+                    <div id="warningMessage" style="flex: 1; min-width: 300px; text-align: left;"></div>
+                    <button onclick="document.getElementById('jiraWarningBanner').style.display='none'" 
+                            style="background: rgba(255,255,255,0.2); border: 1px solid white; color: white; padding: 5px 15px; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                        關閉
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>    
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div id="warningBanner" class="warning-banner">
+                <button class="close-warning" onclick="closeWarning()">關閉</button>
+                <div class="warning-banner-header">
+                    <span class="warning-icon">⚠️</span>
+                    <span>JIRA 連線警告</span>
+                </div>
+                <ul class="warning-list" id="warningList">
+                    <!-- 動態插入警告項目 -->
+                </ul>
+            </div>            
+            <div class="header-top">
+                <h1>
+                    📊 CCC Degrade % 分析儀表板
+                    <span class="fast-badge">⚡ 快取加速</span>
+                </h1>
+                <div class="button-group">
+                    <button class="btn btn-success" onclick="exportExcel()">
+                        📊 匯出 Excel
+                    </button>
+                    <button class="btn btn-info" onclick="exportHTML()">
+                        🌐 匯出 HTML
+                    </button>
+                    <button class="btn btn-primary" onclick="refreshData()">
+                        🔄 重新載入
+                    </button>
+                </div>
+            </div>
+            
+            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（Degrade 用 created date,  CCC issue 用 created date）</p>
+            
+            <div class="cache-indicator" id="cacheIndicator">
+                <div class="cache-dot"></div>
+                <span>快取狀態載入中...</span>
+            </div>
+            
+            <!-- 過濾面板 -->
+            <div class="filter-panel">
+                <div class="filter-row">
+                    <div class="filter-item">
+                        <label for="startDate">開始日期：</label>
+                        <input type="date" id="startDate" class="date-input">
+                    </div>
+                    <div class="filter-item">
+                        <label for="endDate">結束日期：</label>
+                        <input type="date" id="endDate" class="date-input">
+                    </div>
+                    <div class="filter-item">
+                        <label for="ownerFilter">Assignee：</label>
+                        <select id="ownerFilter" class="owner-select">
+                            <option value="">全部</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label for="chartLimit">圖表顯示筆數：</label>
+                        <select id="chartLimit" class="limit-select" onchange="updateChartLimit()">
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                            <option value="5000">5000</option>
+                        </select>
+                    </div>
+                    <!-- 修改：按鈕容器改為水平排列 -->
+                    <div class="filter-buttons">
+                        <button class="btn btn-primary" onclick="resetFilters()">🔄 重置</button>
+                        <button class="btn btn-primary" onclick="applyFilters()">🔍 套用過濾</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="spinner"></div>
+            <div class="loading-text">載入中...</div>
+            <div class="loading-progress" id="loadingProgress"></div>
+        </div>
+        
+        <!-- Error -->
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <!-- Content -->
+        <div id="content" style="display: none;">
+            <!-- 整體統計 -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Degrade Issues</h3>
+                    <div class="value" id="degradeCount">-</div>
+                    <div class="label">問題總數</div>
+                    <div class="sub-stats">
+                        <div class="sub-stat">
+                            <div class="label">內部</div>
+                            <div class="value" id="degradeCountInternal" onclick="openFilterInJira('degrade', 'internal')">-</div>
+                        </div>
+                        <div class="sub-stat">
+                            <div class="label">Vendor</div>
+                            <div class="value" id="degradeCountVendor" onclick="openFilterInJira('degrade', 'vendor')">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <h3>CCC Issues</h3>
+                    <div class="value" id="resolvedCount">-</div>
+                    <div class="label">解題總數</div>
+                    <div class="sub-stats">
+                        <div class="sub-stat">
+                            <div class="label">內部</div>
+                            <div class="value" id="resolvedCountInternal" onclick="openFilterInJira('resolved', 'internal')">-</div>
+                        </div>
+                        <div class="sub-stat">
+                            <div class="label">Vendor</div>
+                            <div class="value" id="resolvedCountVendor" onclick="openFilterInJira('resolved', 'vendor')">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <h3>Degrade %</h3>
+                    <div class="value" id="percentage">-</div>
+                    <div class="label">整體比例</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressBar"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 每週趨勢圖 -->
+            <div class="chart-container">
+                <h2>📈 每週 Degrade % 與 軸：Degrade & CCC Created 數量趨勢（內部 + Vendor 合併）</h2>
+                <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                    💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & CCC issue 數量
+                    <br>📅 Degrade 使用 created 日期 | Resolved 使用 created 日期
+                </p>                
+                <div class="chart-wrapper">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 每週數量對比圖 -->
+            <div class="chart-container">
+                <h2>📊 每週 Degrade vs CCC Created 數量（內部 + Vendor 合併）</h2>
+                <div class="chart-wrapper">
+                    <canvas id="countChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- 週次 Degrade 分布圖 - 內部 -->
+            <div class="chart-container">
+                <h2>📅 每週 Degrade vs CCC Created 數量 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <div class="chart-wrapper">
+                    <canvas id="weeklyDegradeInternal"></canvas>
+                </div>
+            </div>
+            
+            <!-- 週次 Degrade 分布圖 - Vendor -->
+            <div class="chart-container">
+                <h2>📅 每週 Degrade vs CCC Created 數量 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <div class="chart-wrapper">
+                    <canvas id="weeklyDegradeVendor"></canvas>
+                </div>
+            </div>
+            
+            <!-- Assignee 分布圖表 - Degrade -->
+            <div class="chart-container">
+                <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <div class="chart-wrapper-dynamic" id="degradeAssigneeInternalWrapper">
+                    <canvas id="degradeAssigneeInternalChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <div class="chart-wrapper-dynamic" id="degradeAssigneeVendorWrapper">
+                    <canvas id="degradeAssigneeVendorChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Assignee 分布圖表 - Resolved -->
+            <div class="chart-container">
+                <h2>👤 CCC Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <div class="chart-wrapper-dynamic" id="resolvedAssigneeInternalWrapper">
+                    <canvas id="resolvedAssigneeInternalChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h2>👤 CCC Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <div class="chart-wrapper-dynamic" id="resolvedAssigneeVendorWrapper">
+                    <canvas id="resolvedAssigneeVendorChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Assignee 分布表格 -->
+            <div class="table-card">
+                <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <div id="degradeAssigneeInternalTable"></div>
+            </div>
+            
+            <div class="table-card">
+                <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <div id="degradeAssigneeVendorTable"></div>
+            </div>
+            
+            <div class="table-card">
+                <h2>📊 CCC Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <div id="resolvedAssigneeInternalTable"></div>
+            </div>
+            
+            <div class="table-card">
+                <h2>📊 CCC Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <div id="resolvedAssigneeVendorTable"></div>
+            </div>
+        </div>
+        <!-- 版權聲明 -->
+        <footer style="
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-top: 30px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        ">
+            <p style="margin: 0; font-weight: 500;">© 2025 Copyright by Vince. All rights reserved.</p>
+            <p style="margin-top: 8px; font-size: 0.85em; color: #999;">
+                JIRA Degrade % 分析系統 v2.0
+            </p>
+        </footer>        
+    </div>
+    
+    <script>
+        let charts = {};
+        let jiraSites = {};
+        let filterIds = {};
+        let currentFilters = {
+            start_date: '',
+            end_date: '',
+            owner: ''
+        };
+        let chartLimit = 20; // 預設顯示筆數
+        let cachedData = null; // 快取資料以便重繪圖表
+        
+        // ===== 修復：儲存週次日期信息 =====
+        let weeklyDateRanges = {
+            degrade: {},      // 合併的 degrade 週次日期
+            resolved: {},     // 合併的 resolved 週次日期
+            degrade_internal: {},
+            degrade_vendor: {},
+            resolved_internal: {},
+            resolved_vendor: {}
+        };
+        
+        // 顯示/隱藏 Loading
+        function showLoading(show, message = '載入中...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const progress = document.getElementById('loadingProgress');
+            overlay.style.display = show ? 'flex' : 'none';
+            if (show && message) {
+                document.querySelector('.loading-text').textContent = message;
+            }
+        }
+        
+        // 更新圖表顯示筆數
+        function updateChartLimit() {
+            chartLimit = parseInt(document.getElementById('chartLimit').value);
+            if (cachedData) {
+                // 重新繪製 Assignee 圖表
+                drawAssigneeChart('degradeAssigneeInternalChart', cachedData.assignees.degrade.internal, 'Degrade Issues', '#ff6b6b');
+                drawAssigneeChart('degradeAssigneeVendorChart', cachedData.assignees.degrade.vendor, 'Degrade Issues', '#ff6b6b');
+                drawAssigneeChart('resolvedAssigneeInternalChart', cachedData.assignees.resolved.internal, 'CCC Issues', '#51cf66');
+                drawAssigneeChart('resolvedAssigneeVendorChart', cachedData.assignees.resolved.vendor, 'CCC Issues', '#51cf66');
+                
+                // 重新繪製表格
+                drawAssigneeTable('degradeAssigneeInternalTable', cachedData.assignees.degrade.internal, 'internal', 'degrade');
+                drawAssigneeTable('degradeAssigneeVendorTable', cachedData.assignees.degrade.vendor, 'vendor', 'degrade');
+                drawAssigneeTable('resolvedAssigneeInternalTable', cachedData.assignees.resolved.internal, 'internal', 'resolved');
+                drawAssigneeTable('resolvedAssigneeVendorTable', cachedData.assignees.resolved.vendor, 'vendor', 'resolved');
+            }
+        }
+        
+        // ===== 新增：打開 Filter 的 JIRA 連結（用於紅框小數字）=====
+        function openFilterInJira(type, source) {
+            if (!jiraSites || !filterIds) {
+                alert('JIRA 設定尚未載入，請稍候');
+                return;
+            }
+            
+            const site = jiraSites[source];
+            const filterId = filterIds[type][source];
+            
+            // ✅ 修復：根據 type 使用不同的日期欄位
+            // - degrade 使用 created 日期
+            // - resolved 使用 created 日期
+            let dateField = type === 'degrade' ? 'created' : 'created';
+            let jql = `filter=${filterId}`;
+            
+            if (currentFilters.start_date) {
+                jql += ` AND ${dateField} >= "${currentFilters.start_date} 00:00"`;
+            }
+            if (currentFilters.end_date) {
+                jql += ` AND ${dateField} <= "${currentFilters.end_date} 23:59"`;
+            }
+            if (currentFilters.owner) {
+                jql += ` AND assignee="${currentFilters.owner}"`;
+            }
+            
+            console.log(`開啟 JIRA Filter: type=${type}, source=${source}, dateField=${dateField}`);
+            console.log(`JQL: ${jql}`);
+            
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
+        }
+        
+        // 載入資料
+        async function loadData(filters = {}) {
+            try {
+                showLoading(true, '正在載入 JIRA 資料...');
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('content').style.display = 'none';
+                
+                const params = new URLSearchParams();
+                if (filters.start_date) params.append('start_date', filters.start_date);
+                if (filters.end_date) params.append('end_date', filters.end_date);
+                if (filters.owner) params.append('owner', filters.owner);
+                
+                const url = '/api/stats' + (params.toString() ? '?' + params.toString() : '');
+                const response = await fetch(url);
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error || '載入資料失敗');
+                }
+                
+                const data = result.data;
+                cachedData = data; // 快取資料
+                jiraSites = data.jira_sites || {};
+                filterIds = data.filter_ids || {};
+                
+                // ===== 修復：儲存週次日期範圍 =====
+                storeWeeklyDateRanges(data);
+                
+                // 更新 currentFilters
+                currentFilters = {
+                    start_date: filters.start_date || '',
+                    end_date: filters.end_date || '',
+                    owner: filters.owner || ''
+                };
+                
+                // 填充 owner 下拉選單
+                if (data.all_owners && !filters.owner) {
+                    populateOwnerFilter(data.all_owners);
+                }
+                
+                // 更新統計
+                updateStats(data);
+                
+                // 繪製圖表
+                drawCharts(data);
+
+                // ✅ 新增：檢查並顯示警告
+                if (data.warnings && data.warnings.length > 0) {
+                    console.log('⚠️  檢測到 JIRA 載入警告:', data.warnings);
+                    showWarnings(data.warnings);
+                } else {
+                    // 沒有警告時，隱藏警告橫條
+                    document.getElementById('warningBanner').classList.remove('show');
+                }
+
+                // 更新快取狀態
+                updateCacheStatus();
+                
+                showLoading(false);
+                document.getElementById('content').style.display = 'block';
+                
+            } catch (error) {
+                showLoading(false);
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = '錯誤: ' + error.message;
+                console.error('載入資料失敗:', error);
+            }
+        }
+        
+        // ===== 修復：儲存週次日期範圍的函數 =====
+        function storeWeeklyDateRanges(data) {
+            // 從後端返回的 weekly_by_source 中提取日期範圍
+            weeklyDateRanges.degrade_internal = extractDateRanges(data.weekly_by_source.internal);
+            weeklyDateRanges.degrade_vendor = extractDateRanges(data.weekly_by_source.vendor);
+            weeklyDateRanges.resolved_internal = extractDateRanges(data.weekly_by_source_resolved.internal);
+            weeklyDateRanges.resolved_vendor = extractDateRanges(data.weekly_by_source_resolved.vendor);
+            
+            // 從 weekly 數據中提取（這是合併的數據，但我們需要從原始數據重建）
+            // 由於後端沒有直接返回合併的日期範圍，我們從 internal 和 vendor 合併
+            weeklyDateRanges.degrade = mergeWeeklyDateRanges(
+                weeklyDateRanges.degrade_internal,
+                weeklyDateRanges.degrade_vendor
+            );
+            weeklyDateRanges.resolved = mergeWeeklyDateRanges(
+                weeklyDateRanges.resolved_internal,
+                weeklyDateRanges.resolved_vendor
+            );
+        }
+        
+        function extractDateRanges(weeklyData) {
+            const ranges = {};
+            for (const week in weeklyData) {
+                if (weeklyData[week].start_date && weeklyData[week].end_date) {
+                    ranges[week] = {
+                        start_date: weeklyData[week].start_date,
+                        end_date: weeklyData[week].end_date
+                    };
+                }
+            }
+            return ranges;
+        }
+        
+        function mergeWeeklyDateRanges(ranges1, ranges2) {
+            const merged = {};
+            const allWeeks = new Set([...Object.keys(ranges1), ...Object.keys(ranges2)]);
+            
+            for (const week of allWeeks) {
+                // 使用任一來源的日期範圍（它們應該是相同的）
+                if (ranges1[week]) {
+                    merged[week] = ranges1[week];
+                } else if (ranges2[week]) {
+                    merged[week] = ranges2[week];
+                }
+            }
+            
+            return merged;
+        }
+        
+        // 更新統計
+        function updateStats(data) {
+            document.getElementById('degradeCount').textContent = data.overall.degrade_count;
+            document.getElementById('resolvedCount').textContent = data.overall.resolved_count;
+            document.getElementById('percentage').textContent = data.overall.percentage + '%';
+            document.getElementById('progressBar').style.width = Math.min(data.overall.percentage, 100) + '%';
+            
+            document.getElementById('degradeCountInternal').textContent = data.overall.internal.degrade_count;
+            document.getElementById('degradeCountVendor').textContent = data.overall.vendor.degrade_count;
+            document.getElementById('resolvedCountInternal').textContent = data.overall.internal.resolved_count;
+            document.getElementById('resolvedCountVendor').textContent = data.overall.vendor.resolved_count;
+        }
+        
+        // 繪製圖表
+        function drawCharts(data) {
+            drawTrendChart(data.weekly);
+            drawCountChart(data.weekly);
+            
+            // 週次分布圖 - 傳入 degrade 和 resolved 資料
+            drawWeeklyDegradeChart('weeklyDegradeInternal', 
+                data.weekly_by_source.internal, 
+                data.weekly_by_source_resolved.internal,
+                'internal', 
+                'Degrade vs Resolved (內部)');
+            drawWeeklyDegradeChart('weeklyDegradeVendor', 
+                data.weekly_by_source.vendor,
+                data.weekly_by_source_resolved.vendor,
+                'vendor', 
+                'Degrade vs Resolved (Vendor)');
+            
+            // Assignee 圖表
+            drawAssigneeChart('degradeAssigneeInternalChart', data.assignees.degrade.internal, 'Degrade Issues', '#ff6b6b');
+            drawAssigneeChart('degradeAssigneeVendorChart', data.assignees.degrade.vendor, 'Degrade Issues', '#ff6b6b');
+            drawAssigneeChart('resolvedAssigneeInternalChart', data.assignees.resolved.internal, 'CCC Issues', '#51cf66');
+            drawAssigneeChart('resolvedAssigneeVendorChart', data.assignees.resolved.vendor, 'CCC Issues', '#51cf66');
+            
+            // Assignee 表格
+            drawAssigneeTable('degradeAssigneeInternalTable', data.assignees.degrade.internal, 'internal', 'degrade');
+            drawAssigneeTable('degradeAssigneeVendorTable', data.assignees.degrade.vendor, 'vendor', 'degrade');
+            drawAssigneeTable('resolvedAssigneeInternalTable', data.assignees.resolved.internal, 'internal', 'resolved');
+            drawAssigneeTable('resolvedAssigneeVendorTable', data.assignees.resolved.vendor, 'vendor', 'resolved');
+        }
+        
+        // 趨勢圖 - 移除 slice(-20) 限制，顯示所有週次
+        function drawTrendChart(weeklyData) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            if (charts.trendChart) charts.trendChart.destroy();
+            
+            charts.trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: weeklyData.map(d => d.week),
+                    datasets: [
+                        {
+                            label: 'Degrade 數量',
+                            data: weeklyData.map(d => d.degrade_count),
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            yAxisID: 'y1'
+                        },
+                        {
+                            label: 'CCC issue 數量',
+                            data: weeklyData.map(d => d.resolved_count),
+                            borderColor: '#51cf66',
+                            backgroundColor: 'rgba(81, 207, 102, 0.1)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            yAxisID: 'y1'
+                        },
+                        {
+                            label: 'Degrade % (參考)',
+                            data: weeklyData.map(d => d.percentage),
+                            borderColor: '#667eea',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [5, 5],  // 虛線
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            yAxisID: 'y2',
+                            hidden: false  // 預設顯示，可在圖例中關閉
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        if (context.datasetIndex === 2) {
+                                            // 百分比
+                                            label += context.parsed.y.toFixed(2) + '%';
+                                        } else {
+                                            // 數量
+                                            label += context.parsed.y + ' issues';
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: false,
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { 
+                                display: true, 
+                                text: 'Degrade 數量',
+                                color: '#ff6b6b',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#ff6b6b'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { 
+                                display: true, 
+                                text: 'CCC issue 數量',
+                                color: '#51cf66',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#51cf66'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        y2: {
+                            type: 'linear',
+                            display: true,  // 隱藏第三個軸
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { 
+                                display: true, 
+                                text: 'Degrade %',
+                                color: '#667eea',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#667eea'
+                            },                                                     
+                            max: 100,  // 百分比最大值
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 數量圖 - 移除 slice(-20) 限制，顯示所有週次
+        function drawCountChart(weeklyData) {
+            const ctx = document.getElementById('countChart').getContext('2d');
+            
+            if (charts.countChart) charts.countChart.destroy();
+            
+            charts.countChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: weeklyData.map(d => d.week),
+                    datasets: [
+                        {
+                            label: 'Degrade Issues',
+                            data: weeklyData.map(d => d.degrade_count),
+                            backgroundColor: '#ff6b6b'
+                        },
+                        {
+                            label: 'CCC Issues',
+                            data: weeklyData.map(d => d.resolved_count),
+                            backgroundColor: '#51cf66'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+        
+        // 週次 Degrade 分布圖（可點擊，包含 Degrade 和 Resolved）- 移除 slice(-20) 限制
+        function drawWeeklyDegradeChart(canvasId, degradeWeeklyData, resolvedWeeklyData, source, label) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            // 合併所有週次，不限制數量
+            const allWeeks = new Set([
+                ...Object.keys(degradeWeeklyData),
+                ...Object.keys(resolvedWeeklyData)
+            ]);
+            const weeks = Array.from(allWeeks).sort();
+            
+            const degradeCounts = weeks.map(w => degradeWeeklyData[w]?.count || 0);
+            const resolvedCounts = weeks.map(w => resolvedWeeklyData[w]?.count || 0);
+            
+            if (charts[canvasId]) charts[canvasId].destroy();
+            
+            charts[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: weeks,
+                    datasets: [
+                        {
+                            label: 'Degrade Issues',
+                            data: degradeCounts,
+                            backgroundColor: '#ff6b6b',
+                            borderColor: '#ee5a5a',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'CCC Issues',
+                            data: resolvedCounts,
+                            backgroundColor: '#51cf66',
+                            borderColor: '#40c057',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const datasetIndex = elements[0].datasetIndex;
+                            const week = weeks[index];
+                            
+                            // 根據點擊的是 degrade 還是 resolved 來跳轉
+                            const type = datasetIndex === 0 ? 'degrade' : 'resolved';
+                            openWeekInJira(week, source, type);
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
+                            }
+                        },
+                        legend: {
+                            display: true
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: false
+                        },
+                        y: {
+                            stacked: false,
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            
+            ctx.canvas.style.cursor = 'pointer';
+        }
+        
+        // ===== 修復：使用後端返回的正確日期範圍 =====
+        function openWeekInJira(week, source, type) {
+            const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+            const filterId = filterIds[type][source];
+            
+            const dateRangesKey = `${type}_${source}`;
+            const dateRanges = weeklyDateRanges[dateRangesKey];
+            
+            if (!dateRanges || !dateRanges[week]) {
+                alert(`無法找到週次 ${week} 的日期範圍，請重新載入頁面`);
+                return;
+            }
+            
+            const weekStartDate = dateRanges[week].start_date;
+            const weekEndDate = dateRanges[week].end_date;
+            
+            // 根據 type 使用不同的日期欄位
+            let dateField = type === 'degrade' ? 'created' : 'created';
+            let jql = `filter=${filterId} AND ${dateField} >= "${weekStartDate} 00:00" AND ${dateField} <= "${weekEndDate} 23:59"`;
+            
+            if (currentFilters.owner) {
+                jql += ` AND assignee="${currentFilters.owner}"`;
+            }
+            
+            console.log(`週次 ${week} 的 JQL (${type}): ${jql}`);
+            
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
+        }
+        
+        // Assignee 圖表（可點擊）- 動態高度
+        function drawAssigneeChart(canvasId, assigneeData, label, color) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            // 取前 N 名（根據 chartLimit）
+            const sortedData = Object.entries(assigneeData)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, chartLimit);
+            
+            const names = sortedData.map(d => d[0]);
+            const counts = sortedData.map(d => d[1]);
+            
+            // 動態調整高度（每個 bar 約 30px）
+            const chartHeight = Math.max(400, names.length * 30);
+            const wrapper = document.getElementById(canvasId).parentElement;
+            wrapper.style.height = chartHeight + 'px';
+            
+            // 判斷 source 和 type（從 canvasId 解析）
+            let source = 'internal';
+            let type = 'degrade';
+            if (canvasId.includes('Vendor')) source = 'vendor';
+            if (canvasId.includes('resolved')) type = 'resolved';
+            
+            if (charts[canvasId]) charts[canvasId].destroy();
+            
+            charts[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: names,
+                    datasets: [{
+                        label: label,
+                        data: counts,
+                        backgroundColor: color,
+                        borderColor: color,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    onClick: (event, elements) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const assigneeName = names[index];
+                            openAssigneeInJira(assigneeName, source, type);
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Count'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                autoSkip: false,
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        }
+                    },
+                    layout: {
+                        padding: {
+                            left: 20
+                        }
+                    }
+                }
+            });
+            
+            ctx.canvas.style.cursor = 'pointer';
+        }
+        
+        // 開啟 Assignee 的 JIRA - 全部使用 updated
+        function openAssigneeInJira(assigneeName, source, type) {
+            const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+            const filterId = filterIds[type][source];
+            
+            // 根據 type 使用不同的日期欄位
+            let dateField = type === 'degrade' ? 'created' : 'created';
+            let jql = `filter=${filterId} AND assignee="${assigneeName}"`;
+            
+            if (currentFilters.start_date) {
+                jql += ` AND ${dateField} >= "${currentFilters.start_date} 00:00"`;
+            }
+            if (currentFilters.end_date) {
+                jql += ` AND ${dateField} <= "${currentFilters.end_date} 23:59"`;
+            }
+            
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
+        }
+        
+        // Assignee 表格（Assignee 名稱變成連結）
+        function drawAssigneeTable(tableId, assigneeData, source, type) {
+            const container = document.getElementById(tableId);
+            
+            // 取前 N 名（根據 chartLimit）
+            const sortedData = Object.entries(assigneeData)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, chartLimit);
+            
+            const total = Object.values(assigneeData).reduce((a, b) => a + b, 0);
+            
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th>Assignee</th>
+                            <th>Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            sortedData.forEach(([name, count], index) => {
+                const percentage = (count / total * 100).toFixed(2);
+                
+                // 建立 JIRA 連結 - 與點擊事件使用相同的邏輯，使用 updated，修改為絕對日期時間格式
+                const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
+                const filterId = filterIds[type][source];
+                let jql = `filter=${filterId} AND assignee="${name}"`;
+                if (currentFilters.start_date) {
+                    jql += ` AND updated >= "${currentFilters.start_date} 00:00"`;
+                }
+                if (currentFilters.end_date) {
+                    jql += ` AND updated <= "${currentFilters.end_date} 23:59"`;
+                }
+                const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+                
+                html += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td><a href="${url}" target="_blank" class="jira-link">${name}</a></td>
+                        <td>${count}</td>
+                        <td>${percentage}%</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        // 更新快取狀態
+        async function updateCacheStatus() {
+            try {
+                const response = await fetch('/api/cache-status');
+                const status = await response.json();
+                const indicator = document.getElementById('cacheIndicator');
+                
+                if (status.valid) {
+                    const ageMin = Math.floor(status.age_minutes);
+                    indicator.innerHTML = `
+                        <div class="cache-dot"></div>
+                        <span>✓ 使用快取 (${ageMin} 分鐘前)</span>
+                    `;
+                } else {
+                    indicator.innerHTML = `
+                        <div class="cache-dot"></div>
+                        <span>⏳ 載入中...</span>
+                    `;
+                }
+            } catch (error) {
+                console.error('更新快取狀態失敗:', error);
+            }
+        }
+        
+        // 填充 Owner 選單
+        function populateOwnerFilter(owners) {
+            const select = document.getElementById('ownerFilter');
+            select.innerHTML = '<option value="">全部</option>';
+            owners.forEach(owner => {
+                const option = document.createElement('option');
+                option.value = owner;
+                option.textContent = owner;
+                select.appendChild(option);
+            });
+        }
+        
+        // 套用過濾
+        function applyFilters() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const owner = document.getElementById('ownerFilter').value;
+            
+            currentFilters = { start_date: startDate, end_date: endDate, owner: owner };
+            loadData(currentFilters);
+        }
+        
+        // 重置過濾
+        function resetFilters() {
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('ownerFilter').value = '';
+            document.getElementById('chartLimit').value = '20';
+            chartLimit = 20;
+            currentFilters = { start_date: '', end_date: '', owner: '' };
+            loadData();
+        }
+        
+        // 重新載入資料
+        async function refreshData() {
+            if (!confirm('確定要重新載入資料嗎？這可能需要 30-60 秒。')) return;
+            
+            try {
+                showLoading(true, '正在從 JIRA 重新載入資料...');
+                const response = await fetch('/api/refresh', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    await loadData(currentFilters);
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                showLoading(false);
+                alert('重新載入失敗: ' + error.message);
+            }
+        }
+        
+        // 匯出 Excel
+        function exportExcel() {
+            // ✅ 使用 currentFilters 確保與頁面顯示一致
+            const params = new URLSearchParams();
+            if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
+            if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
+            if (currentFilters.owner) params.append('owner', currentFilters.owner);
+            
+            console.log('📤 匯出 Excel 的過濾條件:', currentFilters);
+            window.open('/api/export/excel?' + params.toString(), '_blank');
+        }
+        
+        // 匯出 HTML
+        function exportHTML() {
+            // ✅ 使用 currentFilters 和 chartLimit 確保與頁面顯示一致
+            const params = new URLSearchParams();
+            if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
+            if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
+            if (currentFilters.owner) params.append('owner', currentFilters.owner);
+            params.append('chart_limit', chartLimit);  // 新增：圖表顯示筆數
+            
+            console.log('📤 匯出 HTML 的過濾條件:', currentFilters, 'chartLimit:', chartLimit);
+            window.open('/api/export/html?' + params.toString(), '_blank');
+        }
+        
+        // 頁面載入時
+        window.addEventListener('load', () => {
+            // 設定預設日期範圍（最近一年）
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setFullYear(startDate.getFullYear() - 1);
+            
+            const endDateStr = endDate.toISOString().split('T')[0];
+            const startDateStr = startDate.toISOString().split('T')[0];
+            
+            document.getElementById('endDate').value = endDateStr;
+            document.getElementById('startDate').value = startDateStr;
+            
+            // 使用設定的日期範圍載入資料
+            currentFilters = {
+                start_date: startDateStr,
+                end_date: endDateStr,
+                owner: ''
+            };
+            
+            loadData(currentFilters);
+        });
+
+        function showWarnings(warnings) {
+            if (!warnings || warnings.length === 0) {
+                document.getElementById('warningBanner').classList.remove('show');
+                return;
+            }
+            
+            const warningList = document.getElementById('warningList');
+            warningList.innerHTML = '';
+            
+            warnings.forEach(warning => {
+                const li = document.createElement('li');
+                li.className = 'warning-item';
+                
+                // 根據來源決定網站
+                const siteUrl = `https://${warning.site}`;
+                const sourceName = warning.source === 'internal' ? '內部 JIRA' : 'Vendor JIRA';
+                const typeName = warning.type === 'degrade' ? 'Degrade' : 'Resolved';
+                
+                // ✅ 取得 owner 資訊
+                const ownerName = warning.filter_owner || 'Unknown';
+                
+                // 建立警告訊息
+                let errorMsg = '';
+                if (warning.error_type === 'AUTH_FAILED') {
+                    errorMsg = `${sourceName} (${typeName}) - 認證失敗`;
+                } else if (warning.error_type === 'PERMISSION_DENIED') {
+                    errorMsg = `${sourceName} (${typeName}) - 權限不足`;
+                } else if (warning.error_type === 'FILTER_NOT_FOUND') {
+                    errorMsg = `${sourceName} (${typeName}) - Filter 不存在`;
+                } else if (warning.error_type === 'HTTP_ERROR') {
+                    errorMsg = `${sourceName} (${typeName}) - ${warning.error}`;
+                } else if (warning.error_type === 'CONNECTION_ERROR') {
+                    errorMsg = `${sourceName} (${typeName}) - 無法連線到伺服器`;
+                } else if (warning.error_type === 'TIMEOUT') {
+                    errorMsg = `${sourceName} (${typeName}) - 連線逾時`;
+                } else {
+                    errorMsg = `${sourceName} (${typeName}) - ${warning.error}`;
+                }
+                
+                // ✅ 在訊息中顯示 owner
+                li.innerHTML = `
+                    <strong>${errorMsg}</strong>
+                    <br>
+                    <small>
+                        請 <strong><font color="yellow">${ownerName}</font></strong> 先登入 <font color="blue"><a href="${siteUrl}" target="_blank">${warning.site}</a></font>
+                        ${warning.filter_id ? `(Filter ID: <font color="blue"><a href="${siteUrl}/issues/?filter=${warning.filter_id}" target="_blank">${warning.filter_id}</a></font>)` : ''}
+                    </small>
+                `;
+                
+                warningList.appendChild(li);
+            });
+            
+            document.getElementById('warningBanner').classList.add('show');
+        }
+
+        // 關閉警告橫條
+        function closeWarning() {
+            document.getElementById('warningBanner').classList.remove('show');
+        }        
+    </script>
+</body>
+</html>
