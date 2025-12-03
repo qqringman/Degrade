@@ -88,7 +88,7 @@ class JiraDegradeManagerFast:
                     'jql': f'filter={filter_id}',
                     'startAt': start_at,
                     'maxResults': batch_size,
-                    'fields': 'key,assignee,created,resolutiondate,updated'
+                    'fields': 'key,assignee,created,resolutiondate,updated,duedate'
                 }
                 
                 response = self._make_request(url, params=params, timeout=60)

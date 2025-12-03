@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JIRA Degrade % 分析 - 增強版</title>
+    <title>JIRA  Resolved vs Degrade % 分析儀表板</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
@@ -486,6 +486,62 @@
         .close-warning:hover {
             background: rgba(255, 255, 255, 0.3);
         }
+
+        /* 頁籤樣式 */
+        .tab-container {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 0;
+        }
+
+        .tab-button {
+            padding: 15px 30px;
+            border: 2px solid #999;
+            border-bottom: none;
+            background: linear-gradient(180deg, #ffffff 0%, #d0d0d0 100%);
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            color: #444;
+            border-radius: 10px 10px 0 0;
+            transition: all 0.3s;
+            position: relative;
+            margin-bottom: -3px;
+            box-shadow: inset 0 -2px 5px rgba(0,0,0,0.1);
+        }
+
+        .tab-button:hover {
+            background: linear-gradient(180deg, #f0f0f0 0%, #b8b8b8 100%);
+            border-color: #666;
+            color: #222;
+        }
+
+        .tab-button.active {
+            background: linear-gradient(180deg, #7b8ff5 0%, #667eea 100%);
+            color: white;
+            border-color: #5a6fd6;
+            box-shadow: 0 -3px 10px rgba(102, 126, 234, 0.4), inset 0 2px 5px rgba(255,255,255,0.2);
+        }
+
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
     </style>    
 </head>
 <body>
@@ -518,8 +574,8 @@
                 </ul>
             </div>            
             <div class="header-top">
-                <h1>
-                    📊 JIRA Degrade % 分析儀表板
+                <h1 id="pageTitle">
+                    📊 JIRA  Resolved vs Degrade % 分析儀表板
                     <span class="fast-badge">⚡ 快取加速</span>
                 </h1>
                 <div class="button-group">
@@ -529,13 +585,13 @@
                     <button class="btn btn-info" onclick="exportHTML()">
                         🌐 匯出 HTML
                     </button>
-                    <button class="btn btn-primary" onclick="refreshData()">
+                    <button class="btn btn-primary" id="refreshButton" onclick="refreshData()">
                         🔄 重新載入
                     </button>
                 </div>
             </div>
             
-            <p style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（Degrade 用 created date, Resolved 用 resolved date）</p>
+            <p id="pageDescription" style="color: #666; margin-bottom: 15px;">公版 SQA/QC Degrade 問題統計分析（Degrade 用 created date, Resolved 用 resolved date）</p>
             
             <div class="cache-indicator" id="cacheIndicator">
                 <div class="cache-dot"></div>
@@ -590,8 +646,16 @@
         <!-- Error -->
         <div id="error" class="error" style="display: none;"></div>
         
+        <!-- 頁籤容器 -->
+        <div id="tabContainer" class="tab-container" style="display: none;">
+            <button class="tab-button active" onclick="switchTab('degrade')">Degrade 分析</button>
+            <button id="mttrTabButton" class="tab-button" onclick="switchTab('mttr')" style="display: none;">MTTR 指標</button>
+        </div>
+
         <!-- Content -->
         <div id="content" style="display: none;">
+            <!-- Degrade 分析頁籤內容 -->
+            <div id="degradeTab" class="tab-content active">
             <!-- 整體統計 -->
             <div class="stats-grid">
                 <div class="stat-card">
@@ -639,7 +703,7 @@
                 <h2>📈 每週 Degrade % 與 軸：Degrade & Resolved 數量趨勢（內部 + Vendor 合併）</h2>
                 <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
                     💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & Resolved 數量
-                    <br>📅 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
+                    <br>📈 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
                 </p>                
                 <div class="chart-wrapper">
                     <canvas id="trendChart"></canvas>
@@ -720,6 +784,115 @@
                 <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div id="resolvedAssigneeVendorTable"></div>
             </div>
+            </div> <!-- 關閉 degradeTab -->
+
+            <!-- MTTR 指標頁籤內容 -->
+            <div id="mttrTab" class="tab-content">
+                <!-- MTTR 統計卡片 -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Resolved Issues</h3>
+                        <div class="value" id="mttrResolvedCount">-</div>
+                        <div class="label">已解決問題數</div>
+                        <div class="sub-stats">
+                            <div class="sub-stat">
+                                <div class="label">內部</div>
+                                <div class="value" id="mttrResolvedCountInternal" onclick="openMttrFilterInJira('resolved', 'internal')">-</div>
+                            </div>
+                            <div class="sub-stat">
+                                <div class="label">Vendor</div>
+                                <div class="value" id="mttrResolvedCountVendor" onclick="openMttrFilterInJira('resolved', 'vendor')">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Open Issues</h3>
+                        <div class="value" id="mttrOpenCount">-</div>
+                        <div class="label">未解決問題數</div>
+                        <div class="sub-stats">
+                            <div class="sub-stat">
+                                <div class="label">內部</div>
+                                <div class="value" id="mttrOpenCountInternal" onclick="openMttrFilterInJira('open', 'internal')">-</div>
+                            </div>
+                            <div class="sub-stat">
+                                <div class="label">Vendor</div>
+                                <div class="value" id="mttrOpenCountVendor" onclick="openMttrFilterInJira('open', 'vendor')">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MTTR 圖表說明 -->
+                <div class="chart-container">
+                    <h2>📋 MTTR 指標說明</h2>
+                    <div style="padding: 15px; background: #f8f9fa; border-radius: 10px;">
+                        <p style="margin: 0 0 10px 0;"><strong>已解決問題 (Resolved):</strong></p>
+                        <ul style="margin: 0 0 15px 20px;">
+                            <li><strong>MTTR 指標:</strong> Resolved Date - Created Date (平均解決天數)</li>
+                            <li><strong>平均 Overdue 天數:</strong> Resolved Date - Due Date (僅計算有 Due Date 且超期的問題)</li>
+                        </ul>
+                        <p style="margin: 0 0 10px 0;"><strong>未解決問題 (Open/Ongoing):</strong></p>
+                        <ul style="margin: 0 0 0 20px;">
+                            <li><strong>MTTR(ongoing) 指標:</strong> Now - Created Date (目前等待天數)</li>
+                            <li><strong>平均 Overdue 天數:</strong> Now - Due Date (僅計算有 Due Date 且超期的問題)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- MTTR Resolved 圖表 - 內部+外部 -->
+                <div class="chart-container">
+                    <h2>📈 MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
+                    <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                        💡 左側 Y 軸：平均 MTTR 天數 & 平均 Overdue 天數 | 右側 Y 軸：Issue 數量
+                    </p>
+                    <div class="chart-wrapper">
+                        <canvas id="mttrResolvedAllChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- MTTR Resolved 圖表 - 內部 -->
+                <div class="chart-container">
+                    <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <div class="chart-wrapper">
+                        <canvas id="mttrResolvedInternalChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- MTTR Resolved 圖表 - Vendor -->
+                <div class="chart-container">
+                    <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <div class="chart-wrapper">
+                        <canvas id="mttrResolvedVendorChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- MTTR Open 圖表 - 內部+外部 -->
+                <div class="chart-container">
+                    <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
+                    <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
+                        💡 左側 Y 軸：平均 MTTR(ongoing) 天數 & 平均 Overdue 天數 | 右側 Y 軸：Issue 數量
+                    </p>
+                    <div class="chart-wrapper">
+                        <canvas id="mttrOpenAllChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- MTTR Open 圖表 - 內部 -->
+                <div class="chart-container">
+                    <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <div class="chart-wrapper">
+                        <canvas id="mttrOpenInternalChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- MTTR Open 圖表 - Vendor -->
+                <div class="chart-container">
+                    <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <div class="chart-wrapper">
+                        <canvas id="mttrOpenVendorChart"></canvas>
+                    </div>
+                </div>
+            </div> <!-- 關閉 mttrTab -->
         </div>
         <!-- 版權聲明 -->
         <footer style="
@@ -750,6 +923,10 @@
         };
         let chartLimit = 20; // 預設顯示筆數
         let cachedData = null; // 快取資料以便重繪圖表
+        let mttrEnabled = false; // MTTR 功能是否啟用
+        let mttrData = null; // MTTR 快取資料
+        let mttrFilterIds = {}; // MTTR filter IDs
+        let currentTab = 'degrade'; // 目前頁籤
         
         // ===== 修復：儲存週次日期信息 =====
         let weeklyDateRanges = {
@@ -761,6 +938,369 @@
             resolved_vendor: {}
         };
         
+        // ===== MTTR 相關函數 =====
+
+        // 頁籤切換
+        function switchTab(tabName) {
+            currentTab = tabName;
+
+            // 更新頁籤按鈕狀態
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+
+            // 更新內容顯示
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + 'Tab').classList.add('active');
+
+            // 更新頁面標題和說明文字
+            const pageTitle = document.getElementById('pageTitle');
+            const pageDescription = document.getElementById('pageDescription');
+            const refreshButton = document.getElementById('refreshButton');
+
+            if (tabName === 'degrade') {
+                document.title = 'CCC Degrade % 分析儀表板';
+                pageTitle.innerHTML = '📊 CCC Degrade % 分析儀表板 <span class="fast-badge">⚡ 快取加速</span>';
+                pageDescription.textContent = '公版 SQA/QC Degrade 問題統計分析（Degrade 用 created date, CCC issue 用 created date）';
+                refreshButton.onclick = refreshData;
+            } else if (tabName === 'mttr') {
+                document.title = 'MTTR 指標分析儀表板';
+                pageTitle.innerHTML = '📈 MTTR 指標分析儀表板 <span class="fast-badge">⚡ 快取加速</span>';
+                pageDescription.textContent = 'MTTR 指標分析（已解決: Resolved - Created, 未解決: Now - Created）';
+                refreshButton.onclick = refreshMttrData;
+            }
+
+            // 如果切換到 MTTR 頁籤，載入 MTTR 資料
+            if (tabName === 'mttr' && !mttrData) {
+                loadMttrData();
+            }
+        }
+
+        // 檢查 MTTR 是否啟用
+        async function checkMttrEnabled() {
+            try {
+                const response = await fetch('/api/mttr/enabled');
+                const result = await response.json();
+                mttrEnabled = result.enabled;
+                mttrFilterIds = result.filters || {};
+
+                if (mttrEnabled) {
+                    // 顯示頁籤容器和 MTTR 頁籤按鈕
+                    document.getElementById('tabContainer').style.display = 'flex';
+                    document.getElementById('mttrTabButton').style.display = 'block';
+                    console.log('✅ MTTR 功能已啟用');
+                } else {
+                    console.log('ℹ️ MTTR 功能未啟用（未設定 Filter ID）');
+                }
+            } catch (error) {
+                console.error('檢查 MTTR 狀態失敗:', error);
+            }
+        }
+
+        // 載入 MTTR 資料
+        async function loadMttrData() {
+            try {
+                showLoading(true, '正在載入 MTTR 資料...');
+
+                const params = new URLSearchParams();
+                if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
+                if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
+                if (currentFilters.owner) params.append('owner', currentFilters.owner);
+
+                const url = '/api/mttr/stats' + (params.toString() ? '?' + params.toString() : '');
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || '載入 MTTR 資料失敗');
+                }
+
+                mttrData = result.data;
+
+                // 更新統計
+                updateMttrStats(mttrData);
+
+                // 繪製圖表
+                drawMttrCharts(mttrData);
+
+                showLoading(false);
+
+            } catch (error) {
+                showLoading(false);
+                console.error('載入 MTTR 資料失敗:', error);
+                alert('載入 MTTR 資料失敗: ' + error.message);
+            }
+        }
+
+        // 更新 MTTR 統計
+        function updateMttrStats(data) {
+            document.getElementById('mttrResolvedCount').textContent = data.resolved.counts.total;
+            document.getElementById('mttrResolvedCountInternal').textContent = data.resolved.counts.internal;
+            document.getElementById('mttrResolvedCountVendor').textContent = data.resolved.counts.vendor;
+
+            document.getElementById('mttrOpenCount').textContent = data.open.counts.total;
+            document.getElementById('mttrOpenCountInternal').textContent = data.open.counts.internal;
+            document.getElementById('mttrOpenCountVendor').textContent = data.open.counts.vendor;
+        }
+
+        // 繪製 MTTR 圖表
+        function drawMttrCharts(data) {
+            // Resolved 圖表 - 合併的不支援點擊，內部/Vendor 支援點擊
+            drawMttrTrendChart('mttrResolvedAllChart', data.resolved.all, 'MTTR (已解決)', true, null, null);
+            drawMttrTrendChart('mttrResolvedInternalChart', data.resolved.internal, 'MTTR (內部)', true, 'internal', 'resolved');
+            drawMttrTrendChart('mttrResolvedVendorChart', data.resolved.vendor, 'MTTR (Vendor)', true, 'vendor', 'resolved');
+
+            // Open 圖表 - 合併的不支援點擊，內部/Vendor 支援點擊
+            drawMttrTrendChart('mttrOpenAllChart', data.open.all, 'MTTR(ongoing)', false, null, null);
+            drawMttrTrendChart('mttrOpenInternalChart', data.open.internal, 'MTTR(ongoing) (內部)', false, 'internal', 'open');
+            drawMttrTrendChart('mttrOpenVendorChart', data.open.vendor, 'MTTR(ongoing) (Vendor)', false, 'vendor', 'open');
+        }
+
+        // 繪製 MTTR 趨勢圖
+        // source: 'internal' | 'vendor' | null (null 表示合併圖表，不支援點擊)
+        // type: 'resolved' | 'open' | null
+        function drawMttrTrendChart(canvasId, weeklyData, label, isResolved, source, type) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+
+            if (charts[canvasId]) charts[canvasId].destroy();
+
+            const weeks = weeklyData.map(d => d.week);
+            const mttrDays = weeklyData.map(d => d.avg_mttr_days);
+            const overdueDays = weeklyData.map(d => d.avg_overdue_days);
+            const counts = weeklyData.map(d => d.count);
+
+            // 決定是否支援點擊
+            const clickable = source !== null && type !== null;
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: weeks,
+                    datasets: [
+                        {
+                            label: isResolved ? '平均 MTTR 天數' : '平均 MTTR(ongoing) 天數',
+                            data: mttrDays,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '平均 Overdue 天數',
+                            data: overdueDays,
+                            borderColor: '#ff6b6b',
+                            backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 5,
+                            pointHoverRadius: 7,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Issue 數量',
+                            data: counts,
+                            borderColor: '#51cf66',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 3,
+                            pointHoverRadius: 5,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    onClick: clickable ? (event, elements) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const week = weeks[index];
+                            openMttrWeekInJira(week, source, type);
+                        }
+                    } : undefined,
+                    onHover: clickable ? (event, elements) => {
+                        event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+                    } : undefined,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        if (context.datasetIndex === 2) {
+                                            label += context.parsed.y + ' issues';
+                                        } else {
+                                            label += context.parsed.y.toFixed(2) + ' 天';
+                                        }
+                                    }
+                                    return label;
+                                },
+                                footer: clickable ? function(tooltipItems) {
+                                    return '點擊查看 JIRA Issues';
+                                } : undefined
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '天數',
+                                color: '#667eea',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#667eea'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Issue 數量',
+                                color: '#51cf66',
+                                font: {
+                                    size: 14,
+                                    weight: 'bold'
+                                }
+                            },
+                            ticks: {
+                                color: '#51cf66'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 重新整理 MTTR 資料
+        async function refreshMttrData() {
+            if (!confirm('確定要重新載入 MTTR 資料嗎？這可能需要 30-60 秒。')) return;
+
+            try {
+                showLoading(true, '正在從 JIRA 重新載入 MTTR 資料...');
+                const response = await fetch('/api/mttr/refresh', { method: 'POST' });
+                const result = await response.json();
+
+                if (result.success) {
+                    mttrData = null; // 清除快取
+                    await loadMttrData();
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                showLoading(false);
+                alert('重新載入 MTTR 失敗: ' + error.message);
+            }
+        }
+
+        // 打開 MTTR Filter 的 JIRA 連結（用於統計卡片小數字）
+        function openMttrFilterInJira(type, source) {
+            if (!mttrData || !mttrData.jira_sites || !mttrFilterIds) {
+                console.error('MTTR 資料未載入');
+                return;
+            }
+
+            const site = source === 'internal' ? mttrData.jira_sites.internal : mttrData.jira_sites.vendor;
+            const filterId = mttrFilterIds[type][source];
+
+            if (!filterId) {
+                console.error('找不到 MTTR Filter ID:', type, source);
+                return;
+            }
+
+            // 建立 JQL，加入日期過濾
+            let jql = `filter=${filterId}`;
+
+            if (currentFilters.start_date) {
+                jql += ` AND created >= "${currentFilters.start_date} 00:00"`;
+            }
+            if (currentFilters.end_date) {
+                jql += ` AND created <= "${currentFilters.end_date} 23:59"`;
+            }
+            if (currentFilters.owner) {
+                jql += ` AND assignee="${currentFilters.owner}"`;
+            }
+
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
+        }
+
+        // 打開 MTTR 週次的 JIRA 連結（用於圖表點擊）
+        function openMttrWeekInJira(week, source, type) {
+            if (!mttrData || !mttrData.jira_sites || !mttrFilterIds) {
+                console.error('MTTR 資料未載入');
+                return;
+            }
+
+            const site = source === 'internal' ? mttrData.jira_sites.internal : mttrData.jira_sites.vendor;
+            const filterId = mttrFilterIds[type][source];
+
+            if (!filterId) {
+                console.error('找不到 MTTR Filter ID:', type, source);
+                return;
+            }
+
+            // 從週次資料中取得日期範圍
+            const weeklyData = type === 'resolved'
+                ? (source === 'internal' ? mttrData.resolved.internal : mttrData.resolved.vendor)
+                : (source === 'internal' ? mttrData.open.internal : mttrData.open.vendor);
+
+            const weekData = weeklyData.find(w => w.week === week);
+            if (!weekData) {
+                console.error('找不到週次資料:', week);
+                return;
+            }
+
+            const startDate = weekData.start_date;
+            const endDate = weekData.end_date;
+
+            // 建立 JQL
+            let jql = `filter=${filterId} AND created >= "${startDate} 00:00" AND created <= "${endDate} 23:59"`;
+
+            if (currentFilters.owner) {
+                jql += ` AND assignee="${currentFilters.owner}"`;
+            }
+
+            const url = `https://${site}/issues/?jql=${encodeURIComponent(jql)}`;
+            window.open(url, '_blank');
+        }
+
         // 顯示/隱藏 Loading
         function showLoading(show, message = '載入中...') {
             const overlay = document.getElementById('loadingOverlay');
@@ -1480,7 +2020,14 @@
             const owner = document.getElementById('ownerFilter').value;
             
             currentFilters = { start_date: startDate, end_date: endDate, owner: owner };
+
+            // 根據目前頁籤決定載入哪種資料
+            if (currentTab === 'mttr') {
+                mttrData = null; // 清除快取以便重新載入
+                loadMttrData();
+            } else {
             loadData(currentFilters);
+        }
         }
         
         // 重置過濾
@@ -1491,7 +2038,14 @@
             document.getElementById('chartLimit').value = '20';
             chartLimit = 20;
             currentFilters = { start_date: '', end_date: '', owner: '' };
+
+            // 根據目前頁籤決定載入哪種資料
+            if (currentTab === 'mttr') {
+                mttrData = null;
+                loadMttrData();
+            } else {
             loadData();
+        }
         }
         
         // 重新載入資料
@@ -1540,7 +2094,7 @@
         }
         
         // 頁面載入時
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
             // 設定預設日期範圍（最近一年）
             const endDate = new Date();
             const startDate = new Date();
@@ -1559,6 +2113,9 @@
                 owner: ''
             };
             
+            // 檢查 MTTR 是否啟用
+            await checkMttrEnabled();
+
             loadData(currentFilters);
         });
 
