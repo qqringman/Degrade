@@ -62,6 +62,26 @@ FILTERS = {
     }
 }
 
+# MTTR Filter IDs - 若有設定才啟用 MTTR 指標頁籤
+MTTR_FILTERS = {
+    'resolved': {  # 已解掉的問題
+        'internal': os.getenv('FILTER_MTTR_INTERNAL_RESOLVED'),  # 內部 jira resolved issue
+        'vendor': os.getenv('FILTER_MTTR_VENDOR_RESOLVED')       # Vendor resolved jira
+    },
+    'open': {  # 尚未解掉的問題
+        'internal': os.getenv('FILTER_MTTR_INTERNAL_OPEN'),  # 內部 jira open issue
+        'vendor': os.getenv('FILTER_MTTR_VENDOR_OPEN')       # Vendor open jira
+    }
+}
+
+# 檢查是否啟用 MTTR 功能
+MTTR_ENABLED = any([
+    MTTR_FILTERS['resolved']['internal'],
+    MTTR_FILTERS['resolved']['vendor'],
+    MTTR_FILTERS['open']['internal'],
+    MTTR_FILTERS['open']['vendor']
+])
+
 class DataCache:
     """記憶體快取"""
     def __init__(self, ttl_seconds=3600):
@@ -481,14 +501,384 @@ def get_stats():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# ===== MTTR 相關功能 =====
+
+# MTTR 專用快取
+mttr_cache = DataCache(ttl_seconds=int(os.getenv('CACHE_TTL', 3600)))
+
+def load_mttr_data():
+    """載入 MTTR 資料"""
+    if not MTTR_ENABLED:
+        return None
+
+    try:
+        print("📥 開始載入 MTTR 資料...")
+        from jira_degrade_manager import JiraDegradeManagerFast
+
+        # 建立 JIRA managers
+        internal_jira = JiraDegradeManagerFast(
+            site=JIRA_CONFIG['internal']['site'],
+            user=JIRA_CONFIG['internal']['user'],
+            password=JIRA_CONFIG['internal']['password'],
+            token=JIRA_CONFIG['internal']['token']
+        )
+
+        vendor_jira = JiraDegradeManagerFast(
+            site=JIRA_CONFIG['vendor']['site'],
+            user=JIRA_CONFIG['vendor']['user'],
+            password=JIRA_CONFIG['vendor']['password'],
+            token=JIRA_CONFIG['vendor']['token']
+        )
+
+        results = {}
+        warnings = []
+        start_time = time.time()
+
+        # 定義要載入的任務
+        tasks = []
+        if MTTR_FILTERS['resolved']['internal']:
+            tasks.append(('resolved_internal', internal_jira, MTTR_FILTERS['resolved']['internal'], 'internal', 'resolved'))
+        if MTTR_FILTERS['resolved']['vendor']:
+            tasks.append(('resolved_vendor', vendor_jira, MTTR_FILTERS['resolved']['vendor'], 'vendor', 'resolved'))
+        if MTTR_FILTERS['open']['internal']:
+            tasks.append(('open_internal', internal_jira, MTTR_FILTERS['open']['internal'], 'internal', 'open'))
+        if MTTR_FILTERS['open']['vendor']:
+            tasks.append(('open_vendor', vendor_jira, MTTR_FILTERS['open']['vendor'], 'vendor', 'open'))
+
+        # 並行載入
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_task = {
+                executor.submit(jira.get_filter_issues_fast, filter_id): (task_name, source, type_name)
+                for task_name, jira, filter_id, source, type_name in tasks
+            }
+
+            for future in as_completed(future_to_task):
+                task_name, source, type_name = future_to_task[future]
+                try:
+                    result = future.result()
+
+                    if result['success']:
+                        # 標記來源
+                        for issue in result['issues']:
+                            issue['_source'] = source
+                        results[task_name] = result['issues']
+                    else:
+                        results[task_name] = []
+                        warnings.append({
+                            'source': source,
+                            'type': type_name,
+                            'site': result.get('site', ''),
+                            'filter_id': result.get('filter_id', ''),
+                            'filter_owner': result.get('filter_owner', 'Unknown'),
+                            'error': result.get('error', '未知錯誤'),
+                            'error_type': result.get('error_type', 'UNKNOWN_ERROR')
+                        })
+                except Exception as e:
+                    print(f"  ❌ MTTR {task_name} 失敗: {e}")
+                    results[task_name] = []
+
+        total_time = time.time() - start_time
+        print(f"✅ MTTR 資料載入完成！耗時: {total_time:.1f} 秒")
+
+        data = {
+            'resolved': {
+                'internal': results.get('resolved_internal', []),
+                'vendor': results.get('resolved_vendor', [])
+            },
+            'open': {
+                'internal': results.get('open_internal', []),
+                'vendor': results.get('open_vendor', [])
+            },
+            'jira_sites': {
+                'internal': JIRA_CONFIG['internal']['site'],
+                'vendor': JIRA_CONFIG['vendor']['site']
+            },
+            'metadata': {
+                'load_time': total_time,
+                'timestamp': datetime.now().isoformat(),
+                'warnings': warnings
+            }
+        }
+
+        mttr_cache.set(data)
+        return data
+
+    except Exception as e:
+        print(f"❌ MTTR 載入資料失敗: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def get_mttr_data():
+    """取得 MTTR 資料（優先使用快取）"""
+    data = mttr_cache.get()
+    if data:
+        age = mttr_cache.age()
+        print(f"✓ 使用 MTTR 快取 (年齡: {age:.0f}秒)")
+        return data
+
+    print("⚠ MTTR 快取無效，重新載入...")
+    return load_mttr_data()
+
+def calculate_mttr_metrics(issues, metric_type='resolved'):
+    """
+    計算 MTTR 指標
+
+    Args:
+        issues: issue 列表
+        metric_type: 'resolved' (已解掉) 或 'open' (未解掉)
+
+    Returns:
+        dict: 包含 MTTR 統計資料
+    """
+    weekly_stats = {}
+    now = datetime.now()
+
+    for issue in issues:
+        fields = issue.get('fields', {})
+        created_str = fields.get('created')
+
+        if not created_str:
+            continue
+
+        try:
+            # 解析 created 日期
+            if 'T' in created_str:
+                created_date = datetime.fromisoformat(created_str.replace('Z', '+00:00').split('.')[0])
+            else:
+                created_date = datetime.strptime(created_str[:10], '%Y-%m-%d')
+
+            # 計算 ISO 週次
+            iso_calendar = created_date.isocalendar()
+            iso_year = iso_calendar[0]
+            iso_week = iso_calendar[1]
+            week_key = f"{iso_year}-W{iso_week:02d}"
+
+            if week_key not in weekly_stats:
+                week_start, week_end = get_iso_week_dates(iso_year, iso_week)
+                weekly_stats[week_key] = {
+                    'count': 0,
+                    'total_mttr_days': 0,
+                    'mttr_issues': [],
+                    'overdue_count': 0,
+                    'total_overdue_days': 0,
+                    'overdue_issues': [],
+                    'start_date': week_start.strftime('%Y-%m-%d'),
+                    'end_date': week_end.strftime('%Y-%m-%d')
+                }
+
+            weekly_stats[week_key]['count'] += 1
+
+            if metric_type == 'resolved':
+                # 已解掉的問題: MTTR = Resolved - Created
+                resolved_str = fields.get('resolutiondate')
+                if resolved_str:
+                    if 'T' in resolved_str:
+                        resolved_date = datetime.fromisoformat(resolved_str.replace('Z', '+00:00').split('.')[0])
+                    else:
+                        resolved_date = datetime.strptime(resolved_str[:10], '%Y-%m-%d')
+
+                    mttr_days = (resolved_date - created_date).days
+                    weekly_stats[week_key]['total_mttr_days'] += mttr_days
+                    weekly_stats[week_key]['mttr_issues'].append({
+                        'key': issue.get('key'),
+                        'mttr_days': mttr_days
+                    })
+
+                    # Overdue: Resolved - Duedate (duedate 為空則不計)
+                    duedate_str = fields.get('duedate')
+                    if duedate_str:
+                        if 'T' in duedate_str:
+                            duedate = datetime.fromisoformat(duedate_str.replace('Z', '+00:00').split('.')[0])
+                        else:
+                            duedate = datetime.strptime(duedate_str[:10], '%Y-%m-%d')
+
+                        overdue_days = (resolved_date - duedate).days
+                        if overdue_days > 0:
+                            weekly_stats[week_key]['overdue_count'] += 1
+                            weekly_stats[week_key]['total_overdue_days'] += overdue_days
+                            weekly_stats[week_key]['overdue_issues'].append({
+                                'key': issue.get('key'),
+                                'overdue_days': overdue_days
+                            })
+            else:
+                # 尚未解掉的問題: MTTR(ongoing) = Now - Created
+                mttr_days = (now - created_date).days
+                weekly_stats[week_key]['total_mttr_days'] += mttr_days
+                weekly_stats[week_key]['mttr_issues'].append({
+                    'key': issue.get('key'),
+                    'mttr_days': mttr_days
+                })
+
+                # Overdue(ongoing): Now - Duedate (duedate 為空則不計)
+                duedate_str = fields.get('duedate')
+                if duedate_str:
+                    if 'T' in duedate_str:
+                        duedate = datetime.fromisoformat(duedate_str.replace('Z', '+00:00').split('.')[0])
+                    else:
+                        duedate = datetime.strptime(duedate_str[:10], '%Y-%m-%d')
+
+                    overdue_days = (now - duedate).days
+                    if overdue_days > 0:
+                        weekly_stats[week_key]['overdue_count'] += 1
+                        weekly_stats[week_key]['total_overdue_days'] += overdue_days
+                        weekly_stats[week_key]['overdue_issues'].append({
+                            'key': issue.get('key'),
+                            'overdue_days': overdue_days
+                        })
+
+        except Exception as e:
+            print(f"⚠️  MTTR 計算錯誤: {e} (issue: {issue.get('key')})")
+            continue
+
+    # 計算平均值
+    result = []
+    for week in sorted(weekly_stats.keys()):
+        stats = weekly_stats[week]
+        avg_mttr = stats['total_mttr_days'] / stats['count'] if stats['count'] > 0 else 0
+        avg_overdue = stats['total_overdue_days'] / stats['overdue_count'] if stats['overdue_count'] > 0 else 0
+
+        result.append({
+            'week': week,
+            'count': stats['count'],
+            'avg_mttr_days': round(avg_mttr, 2),
+            'overdue_count': stats['overdue_count'],
+            'avg_overdue_days': round(avg_overdue, 2),
+            'start_date': stats['start_date'],
+            'end_date': stats['end_date']
+        })
+
+    return result
+
+@app.route('/api/mttr/enabled')
+def mttr_enabled():
+    """檢查 MTTR 功能是否啟用"""
+    return jsonify({
+        'enabled': MTTR_ENABLED,
+        'filters': MTTR_FILTERS if MTTR_ENABLED else None
+    })
+
+@app.route('/api/mttr/stats')
+def get_mttr_stats():
+    """取得 MTTR 統計資料"""
+    if not MTTR_ENABLED:
+        return jsonify({'success': False, 'error': 'MTTR 功能未啟用'}), 400
+
+    try:
+        data = get_mttr_data()
+        if not data:
+            return jsonify({'success': False, 'error': '載入 MTTR 資料失敗'}), 500
+
+        # 取得過濾參數
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        owner = request.args.get('owner')
+
+        print(f"📊 MTTR 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
+
+        # 過濾資料 (使用 created 欄位)
+        resolved_internal = filter_issues(data['resolved']['internal'], start_date, end_date, owner, date_field='created')
+        resolved_vendor = filter_issues(data['resolved']['vendor'], start_date, end_date, owner, date_field='created')
+        open_internal = filter_issues(data['open']['internal'], start_date, end_date, owner, date_field='created')
+        open_vendor = filter_issues(data['open']['vendor'], start_date, end_date, owner, date_field='created')
+
+        # 合併資料
+        all_resolved = resolved_internal + resolved_vendor
+        all_open = open_internal + open_vendor
+
+        # 計算 MTTR 指標
+        resolved_stats_internal = calculate_mttr_metrics(resolved_internal, 'resolved')
+        resolved_stats_vendor = calculate_mttr_metrics(resolved_vendor, 'resolved')
+        resolved_stats_all = calculate_mttr_metrics(all_resolved, 'resolved')
+
+        open_stats_internal = calculate_mttr_metrics(open_internal, 'open')
+        open_stats_vendor = calculate_mttr_metrics(open_vendor, 'open')
+        open_stats_all = calculate_mttr_metrics(all_open, 'open')
+
+        # 收集所有 assignees
+        all_owners = set()
+        for issues in [resolved_internal, resolved_vendor, open_internal, open_vendor]:
+            for issue in issues:
+                fields = issue.get('fields', {})
+                assignee = fields.get('assignee')
+                if assignee:
+                    all_owners.add(assignee.get('displayName', 'Unassigned'))
+                else:
+                    all_owners.add('Unassigned')
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'resolved': {
+                    'all': resolved_stats_all,
+                    'internal': resolved_stats_internal,
+                    'vendor': resolved_stats_vendor,
+                    'counts': {
+                        'total': len(all_resolved),
+                        'internal': len(resolved_internal),
+                        'vendor': len(resolved_vendor)
+                    }
+                },
+                'open': {
+                    'all': open_stats_all,
+                    'internal': open_stats_internal,
+                    'vendor': open_stats_vendor,
+                    'counts': {
+                        'total': len(all_open),
+                        'internal': len(open_internal),
+                        'vendor': len(open_vendor)
+                    }
+                },
+                'jira_sites': data['jira_sites'],
+                'filter_ids': MTTR_FILTERS,
+                'all_owners': sorted(list(all_owners)),
+                'filters': {
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'owner': owner
+                },
+                'cache_age': mttr_cache.age(),
+                'load_time': data['metadata']['load_time'],
+                'warnings': data['metadata'].get('warnings', [])
+            }
+        })
+
+    except Exception as e:
+        print(f"❌ MTTR API 錯誤: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/mttr/refresh', methods=['POST'])
+def refresh_mttr():
+    """強制重新載入 MTTR 資料"""
+    if not MTTR_ENABLED:
+        return jsonify({'success': False, 'error': 'MTTR 功能未啟用'}), 400
+
+    try:
+        mttr_cache.clear()
+        data = load_mttr_data()
+        if data:
+            return jsonify({'success': True, 'message': 'MTTR 資料重新載入完成'})
+        else:
+            return jsonify({'success': False, 'error': '載入失敗'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/cache-status')
 def cache_status():
     """快取狀態"""
     age = cache.age()
+    mttr_age = mttr_cache.age() if MTTR_ENABLED else None
     return jsonify({
         'valid': age is not None and age < cache.ttl,
         'age_seconds': age,
-        'age_minutes': age / 60 if age else None
+        'age_minutes': age / 60 if age else None,
+        'mttr_valid': mttr_age is not None and mttr_age < mttr_cache.ttl if MTTR_ENABLED else None,
+        'mttr_age_seconds': mttr_age,
+        'mttr_age_minutes': mttr_age / 60 if mttr_age else None
     })
 
 @app.route('/api/refresh', methods=['POST'])
@@ -1610,19 +2000,30 @@ if __name__ == '__main__':
     print(f"   • Debug Mode: {debug}")
     print(f"   • Cache TTL: {cache.ttl}秒")
     print()
-    print("🔍 Filter IDs:")
+    print("🔍 Degrade Filter IDs:")
     print(f"   • 內部 Degrade: {FILTERS['degrade']['internal']}")
     print(f"   • Vendor Degrade: {FILTERS['degrade']['vendor']}")
     print(f"   • 內部 Resolved: {FILTERS['resolved']['internal']}")
     print(f"   • Vendor Resolved: {FILTERS['resolved']['vendor']}")
     print()
-    print("🔧 修復內容:")
+    if MTTR_ENABLED:
+        print("📊 MTTR Filter IDs (已啟用):")
+        print(f"   • 內部 Resolved: {MTTR_FILTERS['resolved']['internal']}")
+        print(f"   • Vendor Resolved: {MTTR_FILTERS['resolved']['vendor']}")
+        print(f"   • 內部 Open: {MTTR_FILTERS['open']['internal']}")
+        print(f"   • Vendor Open: {MTTR_FILTERS['open']['vendor']}")
+    else:
+        print("📊 MTTR 指標: 未啟用 (未設定 MTTR Filter IDs)")
+    print()
+    print("🔧 功能說明:")
     print("   ✅ 統一從 .env 讀取所有設定")
     print("   ✅ Degrade issues 使用 created 日期")
     print("   ✅ Resolved issues 使用 created 日期")
     print("   ✅ 趨勢圖加入 CCC issue 數量線（雙 Y 軸）")
     print("   ✅ 週次日期範圍計算精確化")
     print("   ✅ 匯出 HTML 紅框連結可點擊")
+    if MTTR_ENABLED:
+        print("   ✅ MTTR 指標頁籤（已解決/未解決問題分析）")
     print()
     print("🌐 伺服器位址:")
     print(f"   • 本機訪問: http://127.0.0.1:{port}")
