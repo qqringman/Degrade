@@ -2080,14 +2080,14 @@
             window.open('/api/export/excel?' + params.toString(), '_blank');
         }
         
-        // 匯出 HTML
+        // 匯出 HTML（同時包含 Degrade 和 MTTR 數據）
         function exportHTML() {
             // ✅ 使用 currentFilters 和 chartLimit 確保與頁面顯示一致
             const params = new URLSearchParams();
             if (currentFilters.start_date) params.append('start_date', currentFilters.start_date);
             if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
             if (currentFilters.owner) params.append('owner', currentFilters.owner);
-            params.append('chart_limit', chartLimit);  // 新增：圖表顯示筆數
+            params.append('chart_limit', chartLimit);
             
             console.log('�� 匯出 HTML 的過濾條件:', currentFilters, 'chartLimit:', chartLimit);
             window.open('/api/export/html?' + params.toString(), '_blank');
