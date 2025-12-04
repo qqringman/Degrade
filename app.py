@@ -118,7 +118,7 @@ cache = DataCache(ttl_seconds=int(os.getenv('CACHE_TTL', 3600)))
 def load_data():
     """載入資料並快取"""
     try:
-        print("�� 開始載入資料...")
+        print("📥 開始載入資料...")
         raw_data = load_all_filters_parallel(JIRA_CONFIG, FILTERS)
         
         # 驗證資料格式
@@ -133,7 +133,7 @@ def load_data():
         
         # 檢查是否為新格式（包含 issues 子鍵）
         if isinstance(raw_data['degrade'], dict) and 'issues' in raw_data['degrade']:
-            print("�� 檢測到新格式資料（包含統計資訊）")
+            print("📦 檢測到新格式資料（包含統計資訊）")
             # 新格式：{'degrade': {'issues': [...], 'total': ..., 'weekly': ..., 'assignees': ...}}
             data = {
                 'degrade': raw_data['degrade']['issues'],
@@ -142,7 +142,7 @@ def load_data():
             }
             print(f"✅ 資料載入成功: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         elif isinstance(raw_data['degrade'], list):
-            print("�� 檢測到舊格式資料（純列表）")
+            print("📦 檢測到舊格式資料（純列表）")
             # 舊格式：{'degrade': [...], 'resolved': [...]}
             data = raw_data
             print(f"✅ 資料載入成功: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
@@ -368,14 +368,14 @@ def get_stats():
         end_date = request.args.get('end_date')
         owner = request.args.get('owner')
         
-        print(f"�� 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
-        print(f"�� 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
+        print(f"📊 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
+        print(f"📊 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         
         # 過濾資料 - degrade 使用 created，resolved 使用 created
         filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner, date_field='created')
         filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner, date_field='created')
         
-        print(f"�� 過濾後: degrade={len(filtered_degrade)}, resolved={len(filtered_resolved)}")
+        print(f"📊 過濾後: degrade={len(filtered_degrade)}, resolved={len(filtered_resolved)}")
         
         # 確保所有 issues 都有正確的 _source 標記
         missing_degrade = [i for i in filtered_degrade if i.get('_source') not in ['internal', 'vendor']]
@@ -404,7 +404,7 @@ def get_stats():
         vendor_resolved = [i for i in filtered_resolved if i.get('_source') == 'vendor']
         
         # 驗證數量一致性
-        print(f"�� 分離驗證:")
+        print(f"📊 分離驗證:")
         print(f"   Degrade: total={len(filtered_degrade)}, internal={len(internal_degrade)}, vendor={len(vendor_degrade)}, sum={len(internal_degrade)+len(vendor_degrade)}")
         print(f"   Resolved: total={len(filtered_resolved)}, internal={len(internal_resolved)}, vendor={len(vendor_resolved)}, sum={len(internal_resolved)+len(vendor_resolved)}")
         
@@ -512,7 +512,7 @@ def load_mttr_data():
         return None
 
     try:
-        print("�� 開始載入 MTTR 資料...")
+        print("📥 開始載入 MTTR 資料...")
         from jira_degrade_manager import JiraDegradeManagerFast
 
         # 建立 JIRA managers
@@ -776,7 +776,7 @@ def get_mttr_stats():
         end_date = request.args.get('end_date')
         owner = request.args.get('owner')
 
-        print(f"�� MTTR 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
+        print(f"📊 MTTR 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
 
         # 過濾資料 (使用 created 欄位)
         resolved_internal = filter_issues(data['resolved']['internal'], start_date, end_date, owner, date_field='created')
@@ -983,7 +983,7 @@ def export_excel():
         create_sheet(wb, 'Resolved All', filtered_resolved, resolved_columns)
         create_sheet(wb, 'Resolved Internal', filtered_resolved, resolved_columns, 'internal')
         create_sheet(wb, 'Resolved Vendor', filtered_resolved, resolved_columns, 'vendor')
-        
+
         # ===== MTTR 資料 =====
         mttr_summary_data = []
         if MTTR_ENABLED:
@@ -1153,14 +1153,14 @@ def export_html():
         data = get_data()
         if not data:
             return jsonify({'success': False, 'error': '無資料可匯出'}), 500
-        
+
         # 取得過濾參數
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         owner = request.args.get('owner')
         chart_limit = int(request.args.get('chart_limit', 20))  # 圖表顯示筆數
-        
-        print(f"�� 匯出 HTML: chart_limit={chart_limit}, MTTR_ENABLED={MTTR_ENABLED}")
+
+        print(f"📤 匯出 HTML: chart_limit={chart_limit}, MTTR_ENABLED={MTTR_ENABLED}")
 
         # ===== MTTR 資料處理 =====
         mttr_html_section = ""
@@ -1228,7 +1228,7 @@ def export_html():
                 mttr_html_section = f"""
         <!-- MTTR 指標區塊 -->
         <div class="info-banner">
-            <strong>�� 提示：</strong> 圖表可以點擊！點擊內部 JIRA 或 Vendor JIRA 的圖表可跳轉到 JIRA 查看該週的 issues
+            <strong>💡 提示：</strong> 圖表可以點擊！點擊內部 JIRA 或 Vendor JIRA 的圖表可跳轉到 JIRA 查看該週的 issues
         </div>
 
         <div class="stats-grid">
@@ -1265,7 +1265,7 @@ def export_html():
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 指標說明</h2>
+            <h2>📋 MTTR 指標說明</h2>
             <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
                 <p><strong>已解決問題 (Resolved):</strong></p>
                 <ul style="margin: 10px 0 15px 20px;">
@@ -1281,32 +1281,32 @@ def export_html():
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
+            <h2>📈 MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
             <div class="chart-wrapper"><canvas id="mttrResolvedAllChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="mttrResolvedInternalChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="mttrResolvedVendorChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
+            <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
             <div class="chart-wrapper"><canvas id="mttrOpenAllChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="mttrOpenInternalChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="mttrOpenVendorChart"></canvas></div>
         </div>
 """
@@ -1349,7 +1349,7 @@ def export_html():
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
             }}
 
-            console.log(`�� 跳轉 MTTR JIRA: ${{type}} (${{source}})`);
+            console.log(`🔗 跳轉 MTTR JIRA: ${{type}} (${{source}})`);
             console.log(`   JQL: ${{jql}}`);
 
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -1871,29 +1871,29 @@ def export_html():
 <body>
     <div class="container">
         <div class="header">
-            <h1 id="pageTitle">�� JIRA Degrade % 分析報告</h1>
+            <h1 id="pageTitle">📊 JIRA Degrade % 分析報告</h1>
             <p id="pageDesc">公版 SQA/QC Degrade 問題統計分析</p>
             <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
                 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 圖表顯示筆數: {chart_limit}
             </p>
             <p style="margin-top: 5px; font-size: 0.85em; color: #999;">
-                �� Degrade 使用 created 日期 | Resolved 使用 created 日期
+                📅 Degrade 使用 created 日期 | Resolved 使用 created 日期
             </p>
         </div>
-        
+
         <!-- 頁籤導航 -->
         <div class="tab-navigation">
-            <button class="tab-button active" onclick="switchTab('degrade')">�� Degrade 分析</button>
-            {'<button class="tab-button" onclick="switchTab(\'mttr\')">�� MTTR 指標</button>' if MTTR_ENABLED else ''}
+            <button class="tab-button active" onclick="switchTab('degrade')">📊 Degrade 分析</button>
+            {'<button class="tab-button" onclick="switchTab(\'mttr\')">📈 MTTR 指標</button>' if MTTR_ENABLED else ''}
         </div>
 
         <!-- Degrade 頁籤內容 -->
         <div id="degradeTab" class="tab-content active">
 
         <div class="info-banner">
-            <strong>�� 提示：</strong> 圖表可以點擊！點擊週次 bar 可跳轉到 JIRA 查看該週的 issues，點擊 Assignee bar 可查看該人員的所有 issues
+            <strong>💡 提示：</strong> 圖表可以點擊！點擊週次 bar 可跳轉到 JIRA 查看該週的 issues，點擊 Assignee bar 可查看該人員的所有 issues
         </div>
-        
+
         <div class="stats-grid">
             <div class="stat-card">
                 <h3>Degrade Issues</h3>
@@ -1934,10 +1934,10 @@ def export_html():
         
         <!-- 每週趨勢圖 -->
         <div class="chart-container">
-            <h2>�� 每週 Degrade % 與 軸：Degrade & CCC issue 數量趨勢（內部 + Vendor 合併）</h2>
+            <h2>📈 每週 Degrade % 與 軸：Degrade & CCC issue 數量趨勢（內部 + Vendor 合併）</h2>
             <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                �� 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & CCC issue 數量
-                <br>�� Degrade 使用 created 日期 | Resolved 使用 created 日期
+                💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & CCC issue 數量
+                <br>📅 Degrade 使用 created 日期 | Resolved 使用 created 日期
             </p>                
             <div class="chart-wrapper">
                 <canvas id="trendChart"></canvas>
@@ -1945,71 +1945,71 @@ def export_html():
         </div>
         
         <div class="chart-container">
-            <h2>�� 每週 Degrade vs CCC issue 數量</h2>
+            <h2>📊 每週 Degrade vs CCC issue 數量</h2>
             <div class="chart-wrapper">
                 <canvas id="countChart"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>�� 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="weeklyDegradeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>�� 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="weeklyDegradeVendor"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>�� Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="degradeAssigneeInternalWrapper">
                 <canvas id="degradeAssigneeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>�� Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="degradeAssigneeVendorWrapper">
                 <canvas id="degradeAssigneeVendor"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>�� Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="resolvedAssigneeInternalWrapper">
                 <canvas id="resolvedAssigneeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>�� Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="resolvedAssigneeVendorWrapper">
                 <canvas id="resolvedAssigneeVendor"></canvas>
             </div>
         </div>
         
         <div class="table-container">
-            <h2>�� Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_degrade_internal}
         </div>
         
         <div class="table-container">
-            <h2>�� Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_degrade_vendor}
         </div>
         
         <div class="table-container">
-            <h2>�� Resolved Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_resolved_internal}
         </div>
         
         <div class="table-container">
-            <h2>�� Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_resolved_vendor}
         </div>
 
@@ -2025,12 +2025,12 @@ def export_html():
             <p style="margin-top: 8px; font-size: 0.85em; color: #999;">CCC Degrade % 分析報告{' + MTTR 指標' if MTTR_ENABLED else ''}</p>
         </footer>
     </div>
-    
+
     <script>
         const jiraSites = {jira_sites_json};
         const filterIds = {filter_ids_json};
         const currentFilters = {current_filters_json};
-        
+
         const weeklyDateRanges = {{
             degrade_internal: {date_ranges_degrade_internal_json},
             degrade_vendor: {date_ranges_degrade_vendor_json},
@@ -2064,11 +2064,11 @@ def export_html():
             const pageDesc = document.getElementById('pageDesc');
 
             if (tabName === 'degrade') {{
-                pageTitle.innerHTML = '�� JIRA Degrade % 分析報告';
+                pageTitle.innerHTML = '📊 JIRA Degrade % 分析報告';
                 pageDesc.textContent = '公版 SQA/QC Degrade 問題統計分析';
                 document.title = 'JIRA Degrade % 分析報告';
             }} else if (tabName === 'mttr') {{
-                pageTitle.innerHTML = '�� MTTR 指標分析報告';
+                pageTitle.innerHTML = '📈 MTTR 指標分析報告';
                 pageDesc.textContent = 'Mean Time To Resolve - 平均解決時間分析';
                 document.title = 'MTTR 指標分析報告';
             }}
@@ -2091,7 +2091,7 @@ def export_html():
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
             }}
             
-            console.log(`�� 跳轉 JIRA: ${{type}} (${{source}})`);
+            console.log(`🔗 跳轉 JIRA: ${{type}} (${{source}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -2121,7 +2121,7 @@ def export_html():
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
             }}
             
-            console.log(`�� 跳轉 JIRA: 週次 ${{week}} (${{source}}, ${{type}})`);
+            console.log(`🔗 跳轉 JIRA: 週次 ${{week}} (${{source}}, ${{type}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -2143,7 +2143,7 @@ def export_html():
                 jql += ` AND ${{dateField}} <= "${{currentFilters.end_date}} 23:59"`;
             }}
             
-            console.log(`�� 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}}, ${{type}})`);
+            console.log(`🔗 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}}, ${{type}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -2359,7 +2359,7 @@ def export_html():
                     legend: {{ display: true }},
                     tooltip: {{
                         callbacks: {{
-                            afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該週的 issues']
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
                         }}
                     }}
                 }}
@@ -2401,7 +2401,7 @@ def export_html():
                     legend: {{ display: true }},
                     tooltip: {{
                         callbacks: {{
-                            afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該週的 issues']
+                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
                         }}
                     }}
                 }}
@@ -2442,7 +2442,7 @@ def export_html():
                         legend: {{ display: true }},
                         tooltip: {{
                             callbacks: {{
-                                afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
                             }}
                         }}
                     }}
@@ -2455,7 +2455,7 @@ def export_html():
         drawAssigneeChart('degradeAssigneeVendor', {degrade_vnd_labels}, {degrade_vnd_data}, 'Degrade Issues', '#ff6b6b', 'vendor', 'degrade');
         drawAssigneeChart('resolvedAssigneeInternal', {resolved_int_labels}, {resolved_int_data}, 'Resolved Issues', '#51cf66', 'internal', 'resolved');
         drawAssigneeChart('resolvedAssigneeVendor', {resolved_vnd_labels}, {resolved_vnd_data}, 'Resolved Issues', '#51cf66', 'vendor', 'resolved');
-        
+
         console.log('✅ Degrade 圖表已載入');
 
         {mttr_js_section}
@@ -2636,7 +2636,7 @@ def export_mttr_html():
 <body>
     <div class="container">
         <div class="header">
-            <h1>�� MTTR 指標分析報告</h1>
+            <h1>📈 MTTR 指標分析報告</h1>
             <p>匯出時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p>{filter_info}</p>
         </div>
@@ -2655,7 +2655,7 @@ def export_mttr_html():
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 指標說明</h2>
+            <h2>📋 MTTR 指標說明</h2>
             <div class="info-box">
                 <p><strong>已解決問題 (Resolved):</strong></p>
                 <ul>
@@ -2671,32 +2671,32 @@ def export_mttr_html():
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
+            <h2>📈 MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
             <div class="chart-wrapper"><canvas id="resolvedAllChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="resolvedInternalChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="resolvedVendorChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
+            <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
             <div class="chart-wrapper"><canvas id="openAllChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="openInternalChart"></canvas></div>
         </div>
 
         <div class="chart-container">
-            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
             <div class="chart-wrapper"><canvas id="openVendorChart"></canvas></div>
         </div>
 
@@ -2888,10 +2888,10 @@ if __name__ == '__main__':
     local_ip = get_local_ip()
     
     print("=" * 70)
-    print("�� JIRA Degrade 分析系統 - 啟動中...")
+    print("🚀 JIRA Degrade 分析系統 - 啟動中...")
     print("=" * 70)
     print()
-    print("�� 系統資訊:")
+    print("📊 系統資訊:")
     print(f"   • 版本: v2.1 (2025-11-18)")
     print(f"   • 作者: Vince")
     print()
@@ -2901,22 +2901,22 @@ if __name__ == '__main__':
     print(f"   • Debug Mode: {debug}")
     print(f"   • Cache TTL: {cache.ttl}秒")
     print()
-    print("�� Degrade Filter IDs:")
+    print("🔍 Degrade Filter IDs:")
     print(f"   • 內部 Degrade: {FILTERS['degrade']['internal']}")
     print(f"   • Vendor Degrade: {FILTERS['degrade']['vendor']}")
     print(f"   • 內部 Resolved: {FILTERS['resolved']['internal']}")
     print(f"   • Vendor Resolved: {FILTERS['resolved']['vendor']}")
     print()
     if MTTR_ENABLED:
-        print("�� MTTR Filter IDs (已啟用):")
+        print("📊 MTTR Filter IDs (已啟用):")
         print(f"   • 內部 Resolved: {MTTR_FILTERS['resolved']['internal']}")
         print(f"   • Vendor Resolved: {MTTR_FILTERS['resolved']['vendor']}")
         print(f"   • 內部 Open: {MTTR_FILTERS['open']['internal']}")
         print(f"   • Vendor Open: {MTTR_FILTERS['open']['vendor']}")
     else:
-        print("�� MTTR 指標: 未啟用 (未設定 MTTR Filter IDs)")
+        print("📊 MTTR 指標: 未啟用 (未設定 MTTR Filter IDs)")
     print()
-    print("�� 功能說明:")
+    print("🔧 功能說明:")
     print("   ✅ 統一從 .env 讀取所有設定")
     print("   ✅ Degrade issues 使用 created 日期")
     print("   ✅ Resolved issues 使用 created 日期")
@@ -2926,11 +2926,11 @@ if __name__ == '__main__':
     if MTTR_ENABLED:
         print("   ✅ MTTR 指標頁籤（已解決/未解決問題分析）")
     print()
-    print("�� 伺服器位址:")
+    print("🌐 伺服器位址:")
     print(f"   • 本機訪問: http://127.0.0.1:{port}")
     print(f"   • 區域網路訪問: http://{local_ip}:{port}")
     print()
-    print("�� 提示:")
+    print("💡 提示:")
     print("   • 首次載入需要 30-60 秒")
     print("   • 按 Ctrl+C 停止服務")
     print("   • 查看 README.md 了解更多功能")
