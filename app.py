@@ -118,7 +118,7 @@ cache = DataCache(ttl_seconds=int(os.getenv('CACHE_TTL', 3600)))
 def load_data():
     """載入資料並快取"""
     try:
-        print("📥 開始載入資料...")
+        print("�� 開始載入資料...")
         raw_data = load_all_filters_parallel(JIRA_CONFIG, FILTERS)
         
         # 驗證資料格式
@@ -133,7 +133,7 @@ def load_data():
         
         # 檢查是否為新格式（包含 issues 子鍵）
         if isinstance(raw_data['degrade'], dict) and 'issues' in raw_data['degrade']:
-            print("📦 檢測到新格式資料（包含統計資訊）")
+            print("�� 檢測到新格式資料（包含統計資訊）")
             # 新格式：{'degrade': {'issues': [...], 'total': ..., 'weekly': ..., 'assignees': ...}}
             data = {
                 'degrade': raw_data['degrade']['issues'],
@@ -142,7 +142,7 @@ def load_data():
             }
             print(f"✅ 資料載入成功: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         elif isinstance(raw_data['degrade'], list):
-            print("📦 檢測到舊格式資料（純列表）")
+            print("�� 檢測到舊格式資料（純列表）")
             # 舊格式：{'degrade': [...], 'resolved': [...]}
             data = raw_data
             print(f"✅ 資料載入成功: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
@@ -368,14 +368,14 @@ def get_stats():
         end_date = request.args.get('end_date')
         owner = request.args.get('owner')
         
-        print(f"📊 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
-        print(f"📊 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
+        print(f"�� 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
+        print(f"�� 原始資料: degrade={len(data['degrade'])}, resolved={len(data['resolved'])}")
         
         # 過濾資料 - degrade 使用 created，resolved 使用 created
         filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner, date_field='created')
         filtered_resolved = filter_issues(data['resolved'], start_date, end_date, owner, date_field='created')
         
-        print(f"📊 過濾後: degrade={len(filtered_degrade)}, resolved={len(filtered_resolved)}")
+        print(f"�� 過濾後: degrade={len(filtered_degrade)}, resolved={len(filtered_resolved)}")
         
         # 確保所有 issues 都有正確的 _source 標記
         missing_degrade = [i for i in filtered_degrade if i.get('_source') not in ['internal', 'vendor']]
@@ -404,7 +404,7 @@ def get_stats():
         vendor_resolved = [i for i in filtered_resolved if i.get('_source') == 'vendor']
         
         # 驗證數量一致性
-        print(f"📊 分離驗證:")
+        print(f"�� 分離驗證:")
         print(f"   Degrade: total={len(filtered_degrade)}, internal={len(internal_degrade)}, vendor={len(vendor_degrade)}, sum={len(internal_degrade)+len(vendor_degrade)}")
         print(f"   Resolved: total={len(filtered_resolved)}, internal={len(internal_resolved)}, vendor={len(vendor_resolved)}, sum={len(internal_resolved)+len(vendor_resolved)}")
         
@@ -512,7 +512,7 @@ def load_mttr_data():
         return None
 
     try:
-        print("📥 開始載入 MTTR 資料...")
+        print("�� 開始載入 MTTR 資料...")
         from jira_degrade_manager import JiraDegradeManagerFast
 
         # 建立 JIRA managers
@@ -776,7 +776,7 @@ def get_mttr_stats():
         end_date = request.args.get('end_date')
         owner = request.args.get('owner')
 
-        print(f"📊 MTTR 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
+        print(f"�� MTTR 過濾參數: start_date={start_date}, end_date={end_date}, owner={owner}")
 
         # 過濾資料 (使用 created 欄位)
         resolved_internal = filter_issues(data['resolved']['internal'], start_date, end_date, owner, date_field='created')
@@ -984,10 +984,117 @@ def export_excel():
         create_sheet(wb, 'Resolved Internal', filtered_resolved, resolved_columns, 'internal')
         create_sheet(wb, 'Resolved Vendor', filtered_resolved, resolved_columns, 'vendor')
         
+        # ===== MTTR 資料 =====
+        mttr_summary_data = []
+        if MTTR_ENABLED:
+            mttr_data = get_mttr_data()
+            if mttr_data:
+                # 過濾 MTTR 資料
+                mttr_resolved_internal = filter_issues(mttr_data['resolved']['internal'], start_date, end_date, owner, date_field='created')
+                mttr_resolved_vendor = filter_issues(mttr_data['resolved']['vendor'], start_date, end_date, owner, date_field='created')
+                mttr_open_internal = filter_issues(mttr_data['open']['internal'], start_date, end_date, owner, date_field='created')
+                mttr_open_vendor = filter_issues(mttr_data['open']['vendor'], start_date, end_date, owner, date_field='created')
+
+                mttr_all_resolved = mttr_resolved_internal + mttr_resolved_vendor
+                mttr_all_open = mttr_open_internal + mttr_open_vendor
+
+                # MTTR 欄位定義
+                def calc_mttr_resolved(issue, fields):
+                    """計算已解決問題的 MTTR"""
+                    created = fields.get('created', '')
+                    resolved = fields.get('resolutiondate', '')
+                    if created and resolved:
+                        try:
+                            created_dt = datetime.fromisoformat(created.split('.')[0].replace('Z', ''))
+                            resolved_dt = datetime.fromisoformat(resolved.split('.')[0].replace('Z', ''))
+                            return (resolved_dt - created_dt).days
+                        except:
+                            pass
+                    return ''
+
+                def calc_overdue_resolved(issue, fields):
+                    """計算已解決問題的 Overdue 天數"""
+                    resolved = fields.get('resolutiondate', '')
+                    duedate = fields.get('duedate', '')
+                    if resolved and duedate:
+                        try:
+                            resolved_dt = datetime.fromisoformat(resolved.split('.')[0].replace('Z', ''))
+                            due_dt = datetime.strptime(duedate[:10], '%Y-%m-%d')
+                            days = (resolved_dt - due_dt).days
+                            return days if days > 0 else 0
+                        except:
+                            pass
+                    return ''
+
+                def calc_mttr_open(issue, fields):
+                    """計算未解決問題的 MTTR(ongoing)"""
+                    created = fields.get('created', '')
+                    if created:
+                        try:
+                            created_dt = datetime.fromisoformat(created.split('.')[0].replace('Z', ''))
+                            return (datetime.now() - created_dt).days
+                        except:
+                            pass
+                    return ''
+
+                def calc_overdue_open(issue, fields):
+                    """計算未解決問題的 Overdue 天數"""
+                    duedate = fields.get('duedate', '')
+                    if duedate:
+                        try:
+                            due_dt = datetime.strptime(duedate[:10], '%Y-%m-%d')
+                            days = (datetime.now() - due_dt).days
+                            return days if days > 0 else 0
+                        except:
+                            pass
+                    return ''
+
+                mttr_resolved_columns = [
+                    ('Issue Key', lambda i, f: i.get('key', '')),
+                    ('Assignee', lambda i, f: f.get('assignee', {}).get('displayName', 'Unassigned') if f.get('assignee') else 'Unassigned'),
+                    ('Created', lambda i, f: f.get('created', '')[:10] if f.get('created') else ''),
+                    ('Resolved', lambda i, f: f.get('resolutiondate', '')[:10] if f.get('resolutiondate') else ''),
+                    ('Due Date', lambda i, f: f.get('duedate', '')[:10] if f.get('duedate') else ''),
+                    ('MTTR (Days)', calc_mttr_resolved),
+                    ('Overdue (Days)', calc_overdue_resolved),
+                    ('Source', lambda i, f: i.get('_source', 'unknown').upper())
+                ]
+
+                mttr_open_columns = [
+                    ('Issue Key', lambda i, f: i.get('key', '')),
+                    ('Assignee', lambda i, f: f.get('assignee', {}).get('displayName', 'Unassigned') if f.get('assignee') else 'Unassigned'),
+                    ('Created', lambda i, f: f.get('created', '')[:10] if f.get('created') else ''),
+                    ('Due Date', lambda i, f: f.get('duedate', '')[:10] if f.get('duedate') else ''),
+                    ('MTTR Ongoing (Days)', calc_mttr_open),
+                    ('Overdue (Days)', calc_overdue_open),
+                    ('Source', lambda i, f: i.get('_source', 'unknown').upper())
+                ]
+
+                # 建立 MTTR 工作表
+                create_sheet(wb, 'MTTR Resolved All', mttr_all_resolved, mttr_resolved_columns)
+                create_sheet(wb, 'MTTR Resolved Internal', mttr_resolved_internal, mttr_resolved_columns)
+                create_sheet(wb, 'MTTR Resolved Vendor', mttr_resolved_vendor, mttr_resolved_columns)
+                create_sheet(wb, 'MTTR Open All', mttr_all_open, mttr_open_columns)
+                create_sheet(wb, 'MTTR Open Internal', mttr_open_internal, mttr_open_columns)
+                create_sheet(wb, 'MTTR Open Vendor', mttr_open_vendor, mttr_open_columns)
+
+                # MTTR 摘要資料
+                mttr_summary_data = [
+                    ['', ''],
+                    ['===== MTTR 指標 =====', ''],
+                    ['MTTR Resolved Issues (Total)', len(mttr_all_resolved)],
+                    ['MTTR Resolved Issues (Internal)', len(mttr_resolved_internal)],
+                    ['MTTR Resolved Issues (Vendor)', len(mttr_resolved_vendor)],
+                    ['MTTR Open Issues (Total)', len(mttr_all_open)],
+                    ['MTTR Open Issues (Internal)', len(mttr_open_internal)],
+                    ['MTTR Open Issues (Vendor)', len(mttr_open_vendor)],
+                ]
+
         # 統計摘要
         ws_summary = wb.create_sheet(title='Summary', index=0)
         summary_data = [
             ['統計項目', '數量'],
+            ['===== Degrade 分析 =====', ''],
             ['Degrade Issues (Total)', len(filtered_degrade)],
             ['Degrade Issues (Internal)', len([i for i in filtered_degrade if i.get('_source') == 'internal'])],
             ['Degrade Issues (Vendor)', len([i for i in filtered_degrade if i.get('_source') == 'vendor'])],
@@ -995,10 +1102,14 @@ def export_excel():
             ['Resolved Issues (Internal)', len([i for i in filtered_resolved if i.get('_source') == 'internal'])],
             ['Resolved Issues (Vendor)', len([i for i in filtered_resolved if i.get('_source') == 'vendor'])],
             ['Degrade %', f"{(len(filtered_degrade) / len(filtered_resolved) * 100) if len(filtered_resolved) > 0 else 0:.2f}%"],
+        ] + mttr_summary_data + [
             ['', ''],
-            ['說明', ''],
+            ['===== 說明 =====', ''],
             ['Degrade Issues', '使用 created 日期'],
             ['Resolved Issues', '使用 created 日期'],
+            ['MTTR', 'Resolved Date - Created Date'],
+            ['MTTR (ongoing)', 'Now - Created Date'],
+            ['Overdue', 'Resolved Date / Now - Due Date'],
         ]
         
         for row_idx, (label, value) in enumerate(summary_data, 1):
@@ -1037,7 +1148,7 @@ def export_excel():
 
 @app.route('/api/export/html')
 def export_html():
-    """匯出 HTML - 完整功能版，包含可點擊圖表和詳細表格"""
+    """匯出 HTML - 完整功能版，包含可點擊圖表和詳細表格，以及 MTTR 指標"""
     try:
         data = get_data()
         if not data:
@@ -1049,7 +1160,316 @@ def export_html():
         owner = request.args.get('owner')
         chart_limit = int(request.args.get('chart_limit', 20))  # 圖表顯示筆數
         
-        print(f"📤 匯出 HTML: chart_limit={chart_limit}")
+        print(f"�� 匯出 HTML: chart_limit={chart_limit}, MTTR_ENABLED={MTTR_ENABLED}")
+
+        # ===== MTTR 資料處理 =====
+        mttr_html_section = ""
+        mttr_js_section = ""
+
+        if MTTR_ENABLED:
+            mttr_data = get_mttr_data()
+            if mttr_data:
+                # 過濾 MTTR 資料
+                mttr_resolved_internal = filter_issues(mttr_data['resolved']['internal'], start_date, end_date, owner, date_field='created')
+                mttr_resolved_vendor = filter_issues(mttr_data['resolved']['vendor'], start_date, end_date, owner, date_field='created')
+                mttr_open_internal = filter_issues(mttr_data['open']['internal'], start_date, end_date, owner, date_field='created')
+                mttr_open_vendor = filter_issues(mttr_data['open']['vendor'], start_date, end_date, owner, date_field='created')
+
+                mttr_all_resolved = mttr_resolved_internal + mttr_resolved_vendor
+                mttr_all_open = mttr_open_internal + mttr_open_vendor
+
+                # 計算 MTTR 指標
+                mttr_resolved_stats_all = calculate_mttr_metrics(mttr_all_resolved, 'resolved')
+                mttr_resolved_stats_internal = calculate_mttr_metrics(mttr_resolved_internal, 'resolved')
+                mttr_resolved_stats_vendor = calculate_mttr_metrics(mttr_resolved_vendor, 'resolved')
+
+                mttr_open_stats_all = calculate_mttr_metrics(mttr_all_open, 'open')
+                mttr_open_stats_internal = calculate_mttr_metrics(mttr_open_internal, 'open')
+                mttr_open_stats_vendor = calculate_mttr_metrics(mttr_open_vendor, 'open')
+
+                # 準備圖表數據
+                mttr_resolved_all_labels = json.dumps([w['week'] for w in mttr_resolved_stats_all])
+                mttr_resolved_all_mttr = json.dumps([w['avg_mttr_days'] for w in mttr_resolved_stats_all])
+                mttr_resolved_all_overdue = json.dumps([w['avg_overdue_days'] for w in mttr_resolved_stats_all])
+                mttr_resolved_all_count = json.dumps([w['count'] for w in mttr_resolved_stats_all])
+
+                mttr_resolved_internal_labels = json.dumps([w['week'] for w in mttr_resolved_stats_internal])
+                mttr_resolved_internal_mttr = json.dumps([w['avg_mttr_days'] for w in mttr_resolved_stats_internal])
+                mttr_resolved_internal_overdue = json.dumps([w['avg_overdue_days'] for w in mttr_resolved_stats_internal])
+                mttr_resolved_internal_count = json.dumps([w['count'] for w in mttr_resolved_stats_internal])
+
+                mttr_resolved_vendor_labels = json.dumps([w['week'] for w in mttr_resolved_stats_vendor])
+                mttr_resolved_vendor_mttr = json.dumps([w['avg_mttr_days'] for w in mttr_resolved_stats_vendor])
+                mttr_resolved_vendor_overdue = json.dumps([w['avg_overdue_days'] for w in mttr_resolved_stats_vendor])
+                mttr_resolved_vendor_count = json.dumps([w['count'] for w in mttr_resolved_stats_vendor])
+
+                mttr_open_all_labels = json.dumps([w['week'] for w in mttr_open_stats_all])
+                mttr_open_all_mttr = json.dumps([w['avg_mttr_days'] for w in mttr_open_stats_all])
+                mttr_open_all_overdue = json.dumps([w['avg_overdue_days'] for w in mttr_open_stats_all])
+                mttr_open_all_count = json.dumps([w['count'] for w in mttr_open_stats_all])
+
+                mttr_open_internal_labels = json.dumps([w['week'] for w in mttr_open_stats_internal])
+                mttr_open_internal_mttr = json.dumps([w['avg_mttr_days'] for w in mttr_open_stats_internal])
+                mttr_open_internal_overdue = json.dumps([w['avg_overdue_days'] for w in mttr_open_stats_internal])
+                mttr_open_internal_count = json.dumps([w['count'] for w in mttr_open_stats_internal])
+
+                mttr_open_vendor_labels = json.dumps([w['week'] for w in mttr_open_stats_vendor])
+                mttr_open_vendor_mttr = json.dumps([w['avg_mttr_days'] for w in mttr_open_stats_vendor])
+                mttr_open_vendor_overdue = json.dumps([w['avg_overdue_days'] for w in mttr_open_stats_vendor])
+                mttr_open_vendor_count = json.dumps([w['count'] for w in mttr_open_stats_vendor])
+
+                # 週次日期範圍
+                mttr_resolved_internal_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in mttr_resolved_stats_internal})
+                mttr_resolved_vendor_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in mttr_resolved_stats_vendor})
+                mttr_open_internal_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in mttr_open_stats_internal})
+                mttr_open_vendor_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in mttr_open_stats_vendor})
+
+                # MTTR HTML 區塊
+                mttr_html_section = f"""
+        <!-- MTTR 指標區塊 -->
+        <div class="info-banner">
+            <strong>�� 提示：</strong> 圖表可以點擊！點擊內部 JIRA 或 Vendor JIRA 的圖表可跳轉到 JIRA 查看該週的 issues
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Resolved Issues</h3>
+                <div class="value" style="color: #51cf66;">{len(mttr_all_resolved)}</div>
+                <div class="label">已解決問題數</div>
+                <div class="sub-stats">
+                    <div class="sub-stat">
+                        <div class="label">內部</div>
+                        <div class="value" onclick="openMttrFilterInJira('resolved', 'internal')" style="cursor: pointer;">{len(mttr_resolved_internal)}</div>
+                    </div>
+                    <div class="sub-stat">
+                        <div class="label">Vendor</div>
+                        <div class="value" onclick="openMttrFilterInJira('resolved', 'vendor')" style="cursor: pointer;">{len(mttr_resolved_vendor)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <h3>Open Issues</h3>
+                <div class="value" style="color: #ff6b6b;">{len(mttr_all_open)}</div>
+                <div class="label">未解決問題數</div>
+                <div class="sub-stats">
+                    <div class="sub-stat">
+                        <div class="label">內部</div>
+                        <div class="value" onclick="openMttrFilterInJira('open', 'internal')" style="cursor: pointer;">{len(mttr_open_internal)}</div>
+                    </div>
+                    <div class="sub-stat">
+                        <div class="label">Vendor</div>
+                        <div class="value" onclick="openMttrFilterInJira('open', 'vendor')" style="cursor: pointer;">{len(mttr_open_vendor)}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 指標說明</h2>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                <p><strong>已解決問題 (Resolved):</strong></p>
+                <ul style="margin: 10px 0 15px 20px;">
+                    <li><strong>MTTR 指標:</strong> Resolved Date - Created Date (平均解決天數)</li>
+                    <li><strong>平均 Overdue 天數:</strong> Resolved Date - Due Date (僅計算有 Due Date 且超期的問題)</li>
+                </ul>
+                <p><strong>未解決問題 (Open/Ongoing):</strong></p>
+                <ul style="margin: 10px 0 0 20px;">
+                    <li><strong>MTTR(ongoing) 指標:</strong> Now - Created Date (目前等待天數)</li>
+                    <li><strong>平均 Overdue 天數:</strong> Now - Due Date (僅計算有 Due Date 且超期的問題)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
+            <div class="chart-wrapper"><canvas id="mttrResolvedAllChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="mttrResolvedInternalChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="mttrResolvedVendorChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
+            <div class="chart-wrapper"><canvas id="mttrOpenAllChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="mttrOpenInternalChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="mttrOpenVendorChart"></canvas></div>
+        </div>
+"""
+
+                # MTTR JavaScript 區塊
+                mttr_js_section = f"""
+        // ===== MTTR 圖表 =====
+        const mttrFilterIds = {{
+            resolved: {{
+                internal: '{MTTR_FILTERS["resolved"]["internal"] or ""}',
+                vendor: '{MTTR_FILTERS["resolved"]["vendor"] or ""}'
+            }},
+            open: {{
+                internal: '{MTTR_FILTERS["open"]["internal"] or ""}',
+                vendor: '{MTTR_FILTERS["open"]["vendor"] or ""}'
+            }}
+        }};
+
+        const mttrWeekDates = {{
+            resolved_internal: {mttr_resolved_internal_dates},
+            resolved_vendor: {mttr_resolved_vendor_dates},
+            open_internal: {mttr_open_internal_dates},
+            open_vendor: {mttr_open_vendor_dates}
+        }};
+
+        function openMttrFilterInJira(type, source) {{
+            const site = jiraSites[source];
+            const filterId = mttrFilterIds[type][source];
+            if (!filterId) return;
+
+            let jql = `filter=${{filterId}}`;
+
+            if (currentFilters.start_date) {{
+                jql += ` AND created >= "${{currentFilters.start_date}} 00:00"`;
+            }}
+            if (currentFilters.end_date) {{
+                jql += ` AND created <= "${{currentFilters.end_date}} 23:59"`;
+            }}
+            if (currentFilters.owner) {{
+                jql += ` AND assignee="${{currentFilters.owner}}"`;
+            }}
+
+            console.log(`�� 跳轉 MTTR JIRA: ${{type}} (${{source}})`);
+            console.log(`   JQL: ${{jql}}`);
+
+            const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
+            window.open(url, '_blank');
+        }}
+
+        function openMttrWeekInJira(week, source, type) {{
+            const site = jiraSites[source];
+            const filterId = mttrFilterIds[type][source];
+            if (!filterId) return;
+
+            const dateKey = type + '_' + source;
+            const weekData = mttrWeekDates[dateKey][week];
+            if (!weekData) return;
+
+            let jql = `filter=${{filterId}} AND created >= "${{weekData.start_date}} 00:00" AND created <= "${{weekData.end_date}} 23:59"`;
+            const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
+            window.open(url, '_blank');
+        }}
+
+        function drawMttrChart(canvasId, labels, mttrData, overdueData, countData, source, type) {{
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const clickable = source !== null && type !== null;
+
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: labels,
+                    datasets: [
+                        {{
+                            label: type === 'resolved' || type === null ? '平均 MTTR 天數' : '平均 MTTR(ongoing) 天數',
+                            data: mttrData,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            yAxisID: 'y'
+                        }},
+                        {{
+                            label: '平均 Overdue 天數',
+                            data: overdueData,
+                            borderColor: '#ff6b6b',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            yAxisID: 'y'
+                        }},
+                        {{
+                            label: 'Issue 數量',
+                            data: countData,
+                            borderColor: '#51cf66',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }}
+                    ]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {{ mode: 'index', intersect: false }},
+                    onClick: clickable ? (event, elements) => {{
+                        if (elements.length > 0) {{
+                            const index = elements[0].index;
+                            const week = labels[index];
+                            openMttrWeekInJira(week, source, type);
+                        }}
+                    }} : undefined,
+                    plugins: {{
+                        legend: {{ display: true, position: 'top' }},
+                        tooltip: {{
+                            callbacks: {{
+                                label: function(context) {{
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) {{
+                                        label += context.datasetIndex === 2 ? context.parsed.y + ' issues' : context.parsed.y.toFixed(2) + ' 天';
+                                    }}
+                                    return label;
+                                }},
+                                footer: clickable ? () => ['點擊查看 JIRA Issues'] : undefined
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        y: {{
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            beginAtZero: true,
+                            title: {{ display: true, text: '天數', color: '#667eea' }},
+                            ticks: {{ color: '#667eea' }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            title: {{ display: true, text: 'Issue 數量', color: '#51cf66' }},
+                            ticks: {{ color: '#51cf66' }},
+                            grid: {{ drawOnChartArea: false }}
+                        }}
+                    }}
+                }}
+            }});
+        }}
+
+        // 繪製 MTTR 圖表
+        drawMttrChart('mttrResolvedAllChart', {mttr_resolved_all_labels}, {mttr_resolved_all_mttr}, {mttr_resolved_all_overdue}, {mttr_resolved_all_count}, null, 'resolved');
+        drawMttrChart('mttrResolvedInternalChart', {mttr_resolved_internal_labels}, {mttr_resolved_internal_mttr}, {mttr_resolved_internal_overdue}, {mttr_resolved_internal_count}, 'internal', 'resolved');
+        drawMttrChart('mttrResolvedVendorChart', {mttr_resolved_vendor_labels}, {mttr_resolved_vendor_mttr}, {mttr_resolved_vendor_overdue}, {mttr_resolved_vendor_count}, 'vendor', 'resolved');
+        drawMttrChart('mttrOpenAllChart', {mttr_open_all_labels}, {mttr_open_all_mttr}, {mttr_open_all_overdue}, {mttr_open_all_count}, null, 'open');
+        drawMttrChart('mttrOpenInternalChart', {mttr_open_internal_labels}, {mttr_open_internal_mttr}, {mttr_open_internal_overdue}, {mttr_open_internal_count}, 'internal', 'open');
+        drawMttrChart('mttrOpenVendorChart', {mttr_open_vendor_labels}, {mttr_open_vendor_mttr}, {mttr_open_vendor_overdue}, {mttr_open_vendor_count}, 'vendor', 'open');
+
+        console.log('✅ MTTR 圖表已載入');
+"""
         
         # 過濾資料 - degrade 使用 created，resolved 使用 created
         filtered_degrade = filter_issues(data['degrade'], start_date, end_date, owner, date_field='created')
@@ -1409,23 +1829,69 @@ def export_html():
             margin-bottom: 20px;
             font-size: 1.3em;
         }}
+
+        /* 頁籤樣式 */
+        .tab-navigation {{
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }}
+
+        .tab-button {{
+            padding: 15px 30px;
+            border: 2px solid #999;
+            border-radius: 10px 10px 0 0;
+            background: linear-gradient(180deg, #ffffff 0%, #d0d0d0 100%);
+            color: #333;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }}
+
+        .tab-button:hover {{
+            background: linear-gradient(180deg, #f0f0f0 0%, #c0c0c0 100%);
+        }}
+
+        .tab-button.active {{
+            background: linear-gradient(180deg, #7b8ff5 0%, #667eea 100%);
+            color: white;
+            border-color: #667eea;
+        }}
+
+        .tab-content {{
+            display: none;
+        }}
+
+        .tab-content.active {{
+            display: block;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 JIRA Degrade % 分析報告</h1>
-            <p>公版 SQA/QC Degrade 問題統計分析</p>
+            <h1 id="pageTitle">�� JIRA Degrade % 分析報告</h1>
+            <p id="pageDesc">公版 SQA/QC Degrade 問題統計分析</p>
             <p style="margin-top: 10px; font-size: 0.9em; color: #999;">
                 生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 圖表顯示筆數: {chart_limit}
             </p>
             <p style="margin-top: 5px; font-size: 0.85em; color: #999;">
-                📅 Degrade 使用 created 日期 | Resolved 使用 created 日期
+                �� Degrade 使用 created 日期 | Resolved 使用 created 日期
             </p>
         </div>
         
+        <!-- 頁籤導航 -->
+        <div class="tab-navigation">
+            <button class="tab-button active" onclick="switchTab('degrade')">�� Degrade 分析</button>
+            {'<button class="tab-button" onclick="switchTab(\'mttr\')">�� MTTR 指標</button>' if MTTR_ENABLED else ''}
+        </div>
+
+        <!-- Degrade 頁籤內容 -->
+        <div id="degradeTab" class="tab-content active">
+
         <div class="info-banner">
-            <strong>💡 提示：</strong> 圖表可以點擊！點擊週次 bar 可跳轉到 JIRA 查看該週的 issues，點擊 Assignee bar 可查看該人員的所有 issues
+            <strong>�� 提示：</strong> 圖表可以點擊！點擊週次 bar 可跳轉到 JIRA 查看該週的 issues，點擊 Assignee bar 可查看該人員的所有 issues
         </div>
         
         <div class="stats-grid">
@@ -1468,10 +1934,10 @@ def export_html():
         
         <!-- 每週趨勢圖 -->
         <div class="chart-container">
-            <h2>📈 每週 Degrade % 與 軸：Degrade & CCC issue 數量趨勢（內部 + Vendor 合併）</h2>
+            <h2>�� 每週 Degrade % 與 軸：Degrade & CCC issue 數量趨勢（內部 + Vendor 合併）</h2>
             <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & CCC issue 數量
-                <br>📅 Degrade 使用 created 日期 | Resolved 使用 created 日期
+                �� 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & CCC issue 數量
+                <br>�� Degrade 使用 created 日期 | Resolved 使用 created 日期
             </p>                
             <div class="chart-wrapper">
                 <canvas id="trendChart"></canvas>
@@ -1479,73 +1945,85 @@ def export_html():
         </div>
         
         <div class="chart-container">
-            <h2>📊 每週 Degrade vs CCC issue 數量</h2>
+            <h2>�� 每週 Degrade vs CCC issue 數量</h2>
             <div class="chart-wrapper">
                 <canvas id="countChart"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+            <h2>�� 每週 Degrade 數量分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="weeklyDegradeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>📅 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+            <h2>�� 每週 Degrade 數量分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper">
                 <canvas id="weeklyDegradeVendor"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>�� Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="degradeAssigneeInternalWrapper">
                 <canvas id="degradeAssigneeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>�� Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="degradeAssigneeVendorWrapper">
                 <canvas id="degradeAssigneeVendor"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>�� Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="resolvedAssigneeInternalWrapper">
                 <canvas id="resolvedAssigneeInternal"></canvas>
             </div>
         </div>
         
         <div class="chart-container">
-            <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
+            <h2>�� Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}，點擊可跳轉 JIRA）</small></h2>
             <div class="chart-wrapper-dynamic" id="resolvedAssigneeVendorWrapper">
                 <canvas id="resolvedAssigneeVendor"></canvas>
             </div>
         </div>
         
         <div class="table-container">
-            <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>�� Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_degrade_internal}
         </div>
         
         <div class="table-container">
-            <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>�� Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_degrade_vendor}
         </div>
         
         <div class="table-container">
-            <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>�� Resolved Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_resolved_internal}
         </div>
         
         <div class="table-container">
-            <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
+            <h2>�� Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（Top {chart_limit}）</small></h2>
             {table_resolved_vendor}
         </div>
+
+        </div><!-- 結束 Degrade 頁籤 -->
+
+        <!-- MTTR 頁籤內容 -->
+        <div id="mttrTab" class="tab-content">
+        {mttr_html_section}
+        </div><!-- 結束 MTTR 頁籤 -->
+
+        <footer style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); margin-top: 30px; text-align: center; color: #666;">
+            <p style="margin: 0; font-weight: 500;">© 2025 Copyright by Vince. All rights reserved.</p>
+            <p style="margin-top: 8px; font-size: 0.85em; color: #999;">CCC Degrade % 分析報告{' + MTTR 指標' if MTTR_ENABLED else ''}</p>
+        </footer>
     </div>
     
     <script>
@@ -1559,6 +2037,42 @@ def export_html():
             resolved_internal: {date_ranges_resolved_internal_json},
             resolved_vendor: {date_ranges_resolved_vendor_json}
         }};
+
+        // 頁籤切換函數
+        function switchTab(tabName) {{
+            // 隱藏所有頁籤內容
+            document.querySelectorAll('.tab-content').forEach(content => {{
+                content.classList.remove('active');
+            }});
+
+            // 移除所有頁籤按鈕的 active 狀態
+            document.querySelectorAll('.tab-button').forEach(button => {{
+                button.classList.remove('active');
+            }});
+
+            // 顯示選中的頁籤內容
+            const tabContent = document.getElementById(tabName + 'Tab');
+            if (tabContent) {{
+                tabContent.classList.add('active');
+            }}
+
+            // 設置選中的頁籤按鈕為 active
+            event.target.classList.add('active');
+
+            // 更新標題
+            const pageTitle = document.getElementById('pageTitle');
+            const pageDesc = document.getElementById('pageDesc');
+
+            if (tabName === 'degrade') {{
+                pageTitle.innerHTML = '�� JIRA Degrade % 分析報告';
+                pageDesc.textContent = '公版 SQA/QC Degrade 問題統計分析';
+                document.title = 'JIRA Degrade % 分析報告';
+            }} else if (tabName === 'mttr') {{
+                pageTitle.innerHTML = '�� MTTR 指標分析報告';
+                pageDesc.textContent = 'Mean Time To Resolve - 平均解決時間分析';
+                document.title = 'MTTR 指標分析報告';
+            }}
+        }}
 
         function openFilterInJira(type, source) {{
             const site = source === 'internal' ? jiraSites.internal : jiraSites.vendor;
@@ -1577,7 +2091,7 @@ def export_html():
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
             }}
             
-            console.log(`🔗 跳轉 JIRA: ${{type}} (${{source}})`);
+            console.log(`�� 跳轉 JIRA: ${{type}} (${{source}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -1607,7 +2121,7 @@ def export_html():
                 jql += ` AND assignee="${{currentFilters.owner}}"`;
             }}
             
-            console.log(`🔗 跳轉 JIRA: 週次 ${{week}} (${{source}}, ${{type}})`);
+            console.log(`�� 跳轉 JIRA: 週次 ${{week}} (${{source}}, ${{type}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -1629,7 +2143,7 @@ def export_html():
                 jql += ` AND ${{dateField}} <= "${{currentFilters.end_date}} 23:59"`;
             }}
             
-            console.log(`🔗 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}}, ${{type}})`);
+            console.log(`�� 跳轉 JIRA: Assignee ${{assigneeName}} (${{source}}, ${{type}})`);
             console.log(`   JQL: ${{jql}}`);
             
             const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
@@ -1845,7 +2359,7 @@ def export_html():
                     legend: {{ display: true }},
                     tooltip: {{
                         callbacks: {{
-                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
+                            afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該週的 issues']
                         }}
                     }}
                 }}
@@ -1887,7 +2401,7 @@ def export_html():
                     legend: {{ display: true }},
                     tooltip: {{
                         callbacks: {{
-                            afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
+                            afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該週的 issues']
                         }}
                     }}
                 }}
@@ -1928,7 +2442,7 @@ def export_html():
                         legend: {{ display: true }},
                         tooltip: {{
                             callbacks: {{
-                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                                afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
                             }}
                         }}
                     }}
@@ -1942,7 +2456,9 @@ def export_html():
         drawAssigneeChart('resolvedAssigneeInternal', {resolved_int_labels}, {resolved_int_data}, 'Resolved Issues', '#51cf66', 'internal', 'resolved');
         drawAssigneeChart('resolvedAssigneeVendor', {resolved_vnd_labels}, {resolved_vnd_data}, 'Resolved Issues', '#51cf66', 'vendor', 'resolved');
         
-        console.log('✅ 所有圖表已載入');
+        console.log('✅ Degrade 圖表已載入');
+
+        {mttr_js_section}
     </script>
 </body>
 </html>
@@ -1966,6 +2482,391 @@ def export_html():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/export/mttr/html')
+def export_mttr_html():
+    """匯出 MTTR HTML 報告"""
+    if not MTTR_ENABLED:
+        return jsonify({'success': False, 'error': 'MTTR 功能未啟用'}), 400
+
+    try:
+        data = get_mttr_data()
+        if not data:
+            return jsonify({'success': False, 'error': '無法載入 MTTR 資料'}), 500
+
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        owner = request.args.get('owner')
+
+        # 過濾資料
+        resolved_internal = filter_issues(data['resolved']['internal'], start_date, end_date, owner, date_field='created')
+        resolved_vendor = filter_issues(data['resolved']['vendor'], start_date, end_date, owner, date_field='created')
+        open_internal = filter_issues(data['open']['internal'], start_date, end_date, owner, date_field='created')
+        open_vendor = filter_issues(data['open']['vendor'], start_date, end_date, owner, date_field='created')
+
+        all_resolved = resolved_internal + resolved_vendor
+        all_open = open_internal + open_vendor
+
+        # 計算 MTTR 指標
+        resolved_stats_all = calculate_mttr_metrics(all_resolved, 'resolved')
+        resolved_stats_internal = calculate_mttr_metrics(resolved_internal, 'resolved')
+        resolved_stats_vendor = calculate_mttr_metrics(resolved_vendor, 'resolved')
+
+        open_stats_all = calculate_mttr_metrics(all_open, 'open')
+        open_stats_internal = calculate_mttr_metrics(open_internal, 'open')
+        open_stats_vendor = calculate_mttr_metrics(open_vendor, 'open')
+
+        # 準備圖表數據
+        resolved_all_labels = json.dumps([w['week'] for w in resolved_stats_all])
+        resolved_all_mttr = json.dumps([w['avg_mttr_days'] for w in resolved_stats_all])
+        resolved_all_overdue = json.dumps([w['avg_overdue_days'] for w in resolved_stats_all])
+        resolved_all_count = json.dumps([w['count'] for w in resolved_stats_all])
+
+        resolved_internal_labels = json.dumps([w['week'] for w in resolved_stats_internal])
+        resolved_internal_mttr = json.dumps([w['avg_mttr_days'] for w in resolved_stats_internal])
+        resolved_internal_overdue = json.dumps([w['avg_overdue_days'] for w in resolved_stats_internal])
+        resolved_internal_count = json.dumps([w['count'] for w in resolved_stats_internal])
+
+        resolved_vendor_labels = json.dumps([w['week'] for w in resolved_stats_vendor])
+        resolved_vendor_mttr = json.dumps([w['avg_mttr_days'] for w in resolved_stats_vendor])
+        resolved_vendor_overdue = json.dumps([w['avg_overdue_days'] for w in resolved_stats_vendor])
+        resolved_vendor_count = json.dumps([w['count'] for w in resolved_stats_vendor])
+
+        open_all_labels = json.dumps([w['week'] for w in open_stats_all])
+        open_all_mttr = json.dumps([w['avg_mttr_days'] for w in open_stats_all])
+        open_all_overdue = json.dumps([w['avg_overdue_days'] for w in open_stats_all])
+        open_all_count = json.dumps([w['count'] for w in open_stats_all])
+
+        open_internal_labels = json.dumps([w['week'] for w in open_stats_internal])
+        open_internal_mttr = json.dumps([w['avg_mttr_days'] for w in open_stats_internal])
+        open_internal_overdue = json.dumps([w['avg_overdue_days'] for w in open_stats_internal])
+        open_internal_count = json.dumps([w['count'] for w in open_stats_internal])
+
+        open_vendor_labels = json.dumps([w['week'] for w in open_stats_vendor])
+        open_vendor_mttr = json.dumps([w['avg_mttr_days'] for w in open_stats_vendor])
+        open_vendor_overdue = json.dumps([w['avg_overdue_days'] for w in open_stats_vendor])
+        open_vendor_count = json.dumps([w['count'] for w in open_stats_vendor])
+
+        # 準備週次日期範圍（用於 JIRA 連結）
+        resolved_internal_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in resolved_stats_internal})
+        resolved_vendor_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in resolved_stats_vendor})
+        open_internal_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in open_stats_internal})
+        open_vendor_dates = json.dumps({w['week']: {'start_date': w['start_date'], 'end_date': w['end_date']} for w in open_stats_vendor})
+
+        filter_info = f"篩選條件: {start_date or '不限'} ~ {end_date or '不限'}" + (f", Assignee: {owner}" if owner else "")
+
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTTR 指標分析報告</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        .container {{ max-width: 1600px; margin: 0 auto; }}
+        .header {{
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }}
+        .header h1 {{ color: #333; font-size: 2.2em; margin-bottom: 10px; }}
+        .header p {{ color: #666; font-size: 1em; }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }}
+        .stat-card {{
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }}
+        .stat-card h3 {{ color: #333; margin-bottom: 10px; }}
+        .stat-card .value {{ font-size: 2.5em; font-weight: bold; color: #667eea; }}
+        .stat-card .label {{ color: #666; font-size: 0.9em; }}
+        .chart-container {{
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }}
+        .chart-container h2 {{ color: #333; margin-bottom: 20px; font-size: 1.3em; }}
+        .chart-wrapper {{ height: 400px; position: relative; }}
+        .badge {{
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 500;
+        }}
+        .badge-internal {{ background: #e3f2fd; color: #1976d2; }}
+        .badge-vendor {{ background: #fce4ec; color: #c2185b; }}
+        .info-box {{
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }}
+        .info-box p {{ margin: 5px 0; }}
+        .info-box ul {{ margin: 10px 0 10px 20px; }}
+        footer {{
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-top: 30px;
+            text-align: center;
+            color: #666;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>�� MTTR 指標分析報告</h1>
+            <p>匯出時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>{filter_info}</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Resolved Issues</h3>
+                <div class="value">{len(all_resolved)}</div>
+                <div class="label">已解決問題數（內部: {len(resolved_internal)} / Vendor: {len(resolved_vendor)}）</div>
+            </div>
+            <div class="stat-card">
+                <h3>Open Issues</h3>
+                <div class="value">{len(all_open)}</div>
+                <div class="label">未解決問題數（內部: {len(open_internal)} / Vendor: {len(open_vendor)}）</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 指標說明</h2>
+            <div class="info-box">
+                <p><strong>已解決問題 (Resolved):</strong></p>
+                <ul>
+                    <li><strong>MTTR 指標:</strong> Resolved Date - Created Date (平均解決天數)</li>
+                    <li><strong>平均 Overdue 天數:</strong> Resolved Date - Due Date (僅計算有 Due Date 且超期的問題)</li>
+                </ul>
+                <p><strong>未解決問題 (Open/Ongoing):</strong></p>
+                <ul>
+                    <li><strong>MTTR(ongoing) 指標:</strong> Now - Created Date (目前等待天數)</li>
+                    <li><strong>平均 Overdue 天數:</strong> Now - Due Date (僅計算有 Due Date 且超期的問題)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
+            <div class="chart-wrapper"><canvas id="resolvedAllChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="resolvedInternalChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="resolvedVendorChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
+            <div class="chart-wrapper"><canvas id="openAllChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="openInternalChart"></canvas></div>
+        </div>
+
+        <div class="chart-container">
+            <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+            <div class="chart-wrapper"><canvas id="openVendorChart"></canvas></div>
+        </div>
+
+        <footer>
+            <p>© 2025 Copyright by Vince. All rights reserved.</p>
+            <p>MTTR 指標分析報告</p>
+        </footer>
+    </div>
+
+    <script>
+        const jiraSites = {{
+            internal: '{data["jira_sites"]["internal"]}',
+            vendor: '{data["jira_sites"]["vendor"]}'
+        }};
+
+        const mttrFilterIds = {{
+            resolved: {{
+                internal: '{MTTR_FILTERS["resolved"]["internal"] or ""}',
+                vendor: '{MTTR_FILTERS["resolved"]["vendor"] or ""}'
+            }},
+            open: {{
+                internal: '{MTTR_FILTERS["open"]["internal"] or ""}',
+                vendor: '{MTTR_FILTERS["open"]["vendor"] or ""}'
+            }}
+        }};
+
+        const weekDates = {{
+            resolved_internal: {resolved_internal_dates},
+            resolved_vendor: {resolved_vendor_dates},
+            open_internal: {open_internal_dates},
+            open_vendor: {open_vendor_dates}
+        }};
+
+        function openMttrWeekInJira(week, source, type) {{
+            const site = jiraSites[source];
+            const filterId = mttrFilterIds[type][source];
+            if (!filterId) return;
+
+            const dateKey = type + '_' + source;
+            const weekData = weekDates[dateKey][week];
+            if (!weekData) return;
+
+            let jql = `filter=${{filterId}} AND created >= "${{weekData.start_date}} 00:00" AND created <= "${{weekData.end_date}} 23:59"`;
+            const url = `https://${{site}}/issues/?jql=${{encodeURIComponent(jql)}}`;
+            window.open(url, '_blank');
+        }}
+
+        function drawMttrChart(canvasId, labels, mttrData, overdueData, countData, source, type) {{
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const clickable = source !== null && type !== null;
+
+            new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: labels,
+                    datasets: [
+                        {{
+                            label: type === 'resolved' ? '平均 MTTR 天數' : '平均 MTTR(ongoing) 天數',
+                            data: mttrData,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            yAxisID: 'y'
+                        }},
+                        {{
+                            label: '平均 Overdue 天數',
+                            data: overdueData,
+                            borderColor: '#ff6b6b',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            yAxisID: 'y'
+                        }},
+                        {{
+                            label: 'Issue 數量',
+                            data: countData,
+                            borderColor: '#51cf66',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }}
+                    ]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {{ mode: 'index', intersect: false }},
+                    onClick: clickable ? (event, elements) => {{
+                        if (elements.length > 0) {{
+                            const index = elements[0].index;
+                            const week = labels[index];
+                            openMttrWeekInJira(week, source, type);
+                        }}
+                    }} : undefined,
+                    plugins: {{
+                        legend: {{ display: true, position: 'top' }},
+                        tooltip: {{
+                            callbacks: {{
+                                label: function(context) {{
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) {{
+                                        label += context.datasetIndex === 2 ? context.parsed.y + ' issues' : context.parsed.y.toFixed(2) + ' 天';
+                                    }}
+                                    return label;
+                                }},
+                                footer: clickable ? () => ['點擊查看 JIRA Issues'] : undefined
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        y: {{
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            beginAtZero: true,
+                            title: {{ display: true, text: '天數', color: '#667eea' }},
+                            ticks: {{ color: '#667eea' }}
+                        }},
+                        y1: {{
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            title: {{ display: true, text: 'Issue 數量', color: '#51cf66' }},
+                            ticks: {{ color: '#51cf66' }},
+                            grid: {{ drawOnChartArea: false }}
+                        }}
+                    }}
+                }}
+            }});
+        }}
+
+        // 繪製所有圖表
+        drawMttrChart('resolvedAllChart', {resolved_all_labels}, {resolved_all_mttr}, {resolved_all_overdue}, {resolved_all_count}, null, null);
+        drawMttrChart('resolvedInternalChart', {resolved_internal_labels}, {resolved_internal_mttr}, {resolved_internal_overdue}, {resolved_internal_count}, 'internal', 'resolved');
+        drawMttrChart('resolvedVendorChart', {resolved_vendor_labels}, {resolved_vendor_mttr}, {resolved_vendor_overdue}, {resolved_vendor_count}, 'vendor', 'resolved');
+        drawMttrChart('openAllChart', {open_all_labels}, {open_all_mttr}, {open_all_overdue}, {open_all_count}, null, null);
+        drawMttrChart('openInternalChart', {open_internal_labels}, {open_internal_mttr}, {open_internal_overdue}, {open_internal_count}, 'internal', 'open');
+        drawMttrChart('openVendorChart', {open_vendor_labels}, {open_vendor_mttr}, {open_vendor_overdue}, {open_vendor_count}, 'vendor', 'open');
+
+        console.log('✅ MTTR 圖表已載入');
+    </script>
+</body>
+</html>
+"""
+
+        output = io.BytesIO(html_content.encode('utf-8'))
+        output.seek(0)
+
+        filename = f"mttr_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+
+        return send_file(
+            output,
+            mimetype='text/html',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        print(f"❌ MTTR HTML 匯出失敗: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def get_local_ip():
     """取得本機 IP 位址"""
     try:
@@ -1987,10 +2888,10 @@ if __name__ == '__main__':
     local_ip = get_local_ip()
     
     print("=" * 70)
-    print("🚀 JIRA Degrade 分析系統 - 啟動中...")
+    print("�� JIRA Degrade 分析系統 - 啟動中...")
     print("=" * 70)
     print()
-    print("📊 系統資訊:")
+    print("�� 系統資訊:")
     print(f"   • 版本: v2.1 (2025-11-18)")
     print(f"   • 作者: Vince")
     print()
@@ -2000,22 +2901,22 @@ if __name__ == '__main__':
     print(f"   • Debug Mode: {debug}")
     print(f"   • Cache TTL: {cache.ttl}秒")
     print()
-    print("🔍 Degrade Filter IDs:")
+    print("�� Degrade Filter IDs:")
     print(f"   • 內部 Degrade: {FILTERS['degrade']['internal']}")
     print(f"   • Vendor Degrade: {FILTERS['degrade']['vendor']}")
     print(f"   • 內部 Resolved: {FILTERS['resolved']['internal']}")
     print(f"   • Vendor Resolved: {FILTERS['resolved']['vendor']}")
     print()
     if MTTR_ENABLED:
-        print("📊 MTTR Filter IDs (已啟用):")
+        print("�� MTTR Filter IDs (已啟用):")
         print(f"   • 內部 Resolved: {MTTR_FILTERS['resolved']['internal']}")
         print(f"   • Vendor Resolved: {MTTR_FILTERS['resolved']['vendor']}")
         print(f"   • 內部 Open: {MTTR_FILTERS['open']['internal']}")
         print(f"   • Vendor Open: {MTTR_FILTERS['open']['vendor']}")
     else:
-        print("📊 MTTR 指標: 未啟用 (未設定 MTTR Filter IDs)")
+        print("�� MTTR 指標: 未啟用 (未設定 MTTR Filter IDs)")
     print()
-    print("🔧 功能說明:")
+    print("�� 功能說明:")
     print("   ✅ 統一從 .env 讀取所有設定")
     print("   ✅ Degrade issues 使用 created 日期")
     print("   ✅ Resolved issues 使用 created 日期")
@@ -2025,11 +2926,11 @@ if __name__ == '__main__':
     if MTTR_ENABLED:
         print("   ✅ MTTR 指標頁籤（已解決/未解決問題分析）")
     print()
-    print("🌐 伺服器位址:")
+    print("�� 伺服器位址:")
     print(f"   • 本機訪問: http://127.0.0.1:{port}")
     print(f"   • 區域網路訪問: http://{local_ip}:{port}")
     print()
-    print("💡 提示:")
+    print("�� 提示:")
     print("   • 首次載入需要 30-60 秒")
     print("   • 按 Ctrl+C 停止服務")
     print("   • 查看 README.md 了解更多功能")
