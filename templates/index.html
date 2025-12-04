@@ -575,18 +575,18 @@
             </div>            
             <div class="header-top">
                 <h1 id="pageTitle">
-                    📊 JIRA  Resolved vs Degrade % 分析儀表板
+                    �� JIRA  Resolved vs Degrade % 分析儀表板
                     <span class="fast-badge">⚡ 快取加速</span>
                 </h1>
                 <div class="button-group">
                     <button class="btn btn-success" onclick="exportExcel()">
-                        📊 匯出 Excel
+                        �� 匯出 Excel
                     </button>
                     <button class="btn btn-info" onclick="exportHTML()">
-                        🌐 匯出 HTML
+                        �� 匯出 HTML
                     </button>
                     <button class="btn btn-primary" id="refreshButton" onclick="refreshData()">
-                        🔄 重新載入
+                        �� 重新載入
                     </button>
                 </div>
             </div>
@@ -629,8 +629,8 @@
                     </div>
                     <!-- 修改：按鈕容器改為水平排列 -->
                     <div class="filter-buttons">
-                        <button class="btn btn-primary" onclick="resetFilters()">🔄 重置</button>
-                        <button class="btn btn-primary" onclick="applyFilters()">🔍 套用過濾</button>
+                        <button class="btn btn-primary" onclick="resetFilters()">�� 重置</button>
+                        <button class="btn btn-primary" onclick="applyFilters()">�� 套用過濾</button>
                     </div>
                 </div>
             </div>
@@ -700,10 +700,10 @@
             
             <!-- 每週趨勢圖 -->
             <div class="chart-container">
-                <h2>📈 每週 Degrade % 與 軸：Degrade & Resolved 數量趨勢（內部 + Vendor 合併）</h2>
+                <h2>�� 每週 Degrade % 與 軸：Degrade & Resolved 數量趨勢（內部 + Vendor 合併）</h2>
                 <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                    💡 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & Resolved 數量
-                    <br>📈 Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
+                    �� 左側 Y 軸：Degrade % | 右側 Y 軸：軸：Degrade & Resolved 數量
+                    <br>�� Degrade 使用 created 日期 | Resolved 使用 resolutiondate 日期
                 </p>                
                 <div class="chart-wrapper">
                     <canvas id="trendChart"></canvas>
@@ -712,7 +712,7 @@
             
             <!-- 每週數量對比圖 -->
             <div class="chart-container">
-                <h2>📊 每週 Degrade vs Resolved 數量（內部 + Vendor 合併）</h2>
+                <h2>�� 每週 Degrade vs Resolved 數量（內部 + Vendor 合併）</h2>
                 <div class="chart-wrapper">
                     <canvas id="countChart"></canvas>
                 </div>
@@ -720,7 +720,7 @@
             
             <!-- 週次 Degrade 分布圖 - 內部 -->
             <div class="chart-container">
-                <h2>📅 每週 Degrade vs Resolved 數量 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <h2>�� 每週 Degrade vs Resolved 數量 <span class="badge badge-internal">內部 JIRA</span></h2>
                 <div class="chart-wrapper">
                     <canvas id="weeklyDegradeInternal"></canvas>
                 </div>
@@ -728,7 +728,7 @@
             
             <!-- 週次 Degrade 分布圖 - Vendor -->
             <div class="chart-container">
-                <h2>📅 每週 Degrade vs Resolved 數量 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <h2>�� 每週 Degrade vs Resolved 數量 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div class="chart-wrapper">
                     <canvas id="weeklyDegradeVendor"></canvas>
                 </div>
@@ -736,14 +736,14 @@
             
             <!-- Assignee 分布圖表 - Degrade -->
             <div class="chart-container">
-                <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <h2>�� Degrade Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
                 <div class="chart-wrapper-dynamic" id="degradeAssigneeInternalWrapper">
                     <canvas id="degradeAssigneeInternalChart"></canvas>
                 </div>
             </div>
             
             <div class="chart-container">
-                <h2>👤 Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <h2>�� Degrade Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div class="chart-wrapper-dynamic" id="degradeAssigneeVendorWrapper">
                     <canvas id="degradeAssigneeVendorChart"></canvas>
                 </div>
@@ -751,14 +751,14 @@
             
             <!-- Assignee 分布圖表 - Resolved -->
             <div class="chart-container">
-                <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <h2>�� Resolved Issues Assignee 分布 <span class="badge badge-internal">內部 JIRA</span></h2>
                 <div class="chart-wrapper-dynamic" id="resolvedAssigneeInternalWrapper">
                     <canvas id="resolvedAssigneeInternalChart"></canvas>
                 </div>
             </div>
             
             <div class="chart-container">
-                <h2>👤 Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <h2>�� Resolved Issues Assignee 分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div class="chart-wrapper-dynamic" id="resolvedAssigneeVendorWrapper">
                     <canvas id="resolvedAssigneeVendorChart"></canvas>
                 </div>
@@ -766,22 +766,22 @@
             
             <!-- Assignee 分布表格 -->
             <div class="table-card">
-                <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <h2>�� Degrade Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span></h2>
                 <div id="degradeAssigneeInternalTable"></div>
             </div>
             
             <div class="table-card">
-                <h2>📊 Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <h2>�� Degrade Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div id="degradeAssigneeVendorTable"></div>
             </div>
             
             <div class="table-card">
-                <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span></h2>
+                <h2>�� Resolved Issues Assignee 詳細分布 <span class="badge badge-internal">內部 JIRA</span></h2>
                 <div id="resolvedAssigneeInternalTable"></div>
             </div>
             
             <div class="table-card">
-                <h2>📊 Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
+                <h2>�� Resolved Issues Assignee 詳細分布 <span class="badge badge-vendor">Vendor JIRA</span></h2>
                 <div id="resolvedAssigneeVendorTable"></div>
             </div>
             </div> <!-- 關閉 degradeTab -->
@@ -824,7 +824,7 @@
 
                 <!-- MTTR 圖表說明 -->
                 <div class="chart-container">
-                    <h2>📋 MTTR 指標說明</h2>
+                    <h2>�� MTTR 指標說明</h2>
                     <div style="padding: 15px; background: #f8f9fa; border-radius: 10px;">
                         <p style="margin: 0 0 10px 0;"><strong>已解決問題 (Resolved):</strong></p>
                         <ul style="margin: 0 0 15px 20px;">
@@ -841,9 +841,9 @@
 
                 <!-- MTTR Resolved 圖表 - 內部+外部 -->
                 <div class="chart-container">
-                    <h2>📈 MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
+                    <h2>�� MTTR 趨勢 - 已解決問題（內部 + Vendor）</h2>
                     <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                        💡 左側 Y 軸：平均 MTTR 天數 & 平均 Overdue 天數 | 右側 Y 軸：Issue 數量
+                        �� 左側 Y 軸：平均 MTTR 天數 & 平均 Overdue 天數 | 右側 Y 軸：Issue 數量
                     </p>
                     <div class="chart-wrapper">
                         <canvas id="mttrResolvedAllChart"></canvas>
@@ -852,7 +852,7 @@
 
                 <!-- MTTR Resolved 圖表 - 內部 -->
                 <div class="chart-container">
-                    <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
                     <div class="chart-wrapper">
                         <canvas id="mttrResolvedInternalChart"></canvas>
                     </div>
@@ -860,7 +860,7 @@
 
                 <!-- MTTR Resolved 圖表 - Vendor -->
                 <div class="chart-container">
-                    <h2>📈 MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <h2>�� MTTR 趨勢 - 已解決問題 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
                     <div class="chart-wrapper">
                         <canvas id="mttrResolvedVendorChart"></canvas>
                     </div>
@@ -868,9 +868,9 @@
 
                 <!-- MTTR Open 圖表 - 內部+外部 -->
                 <div class="chart-container">
-                    <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
+                    <h2>�� MTTR(ongoing) 趨勢 - 未解決問題（內部 + Vendor）</h2>
                     <p style="color: #666; font-size: 0.9em; margin-top: 5px;">
-                        💡 左側 Y 軸：平均 MTTR(ongoing) 天數 & 平均 Overdue 天數 | 右側 Y 軸：Issue 數量
+                        �� 左側 Y 軸：平均 MTTR(ongoing) 天數 & 平均 Overdue 天數 | 右側 Y 軸：Issue 數量
                     </p>
                     <div class="chart-wrapper">
                         <canvas id="mttrOpenAllChart"></canvas>
@@ -879,7 +879,7 @@
 
                 <!-- MTTR Open 圖表 - 內部 -->
                 <div class="chart-container">
-                    <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-internal">內部 JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
                     <div class="chart-wrapper">
                         <canvas id="mttrOpenInternalChart"></canvas>
                     </div>
@@ -887,7 +887,7 @@
 
                 <!-- MTTR Open 圖表 - Vendor -->
                 <div class="chart-container">
-                    <h2>📈 MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
+                    <h2>�� MTTR(ongoing) 趨勢 - 未解決問題 <span class="badge badge-vendor">Vendor JIRA</span> <small style="color: #999;">（點擊可跳轉 JIRA）</small></h2>
                     <div class="chart-wrapper">
                         <canvas id="mttrOpenVendorChart"></canvas>
                     </div>
@@ -958,13 +958,13 @@
             const refreshButton = document.getElementById('refreshButton');
 
             if (tabName === 'degrade') {
-                document.title = 'CCC Degrade % 分析儀表板';
-                pageTitle.innerHTML = '📊 CCC Degrade % 分析儀表板 <span class="fast-badge">⚡ 快取加速</span>';
+                document.title = 'JIRA  Resolved vs Degrade % 分析儀表板';
+                pageTitle.innerHTML = '�� JIRA  Resolved vs Degrade % 分析儀表板 <span class="fast-badge">⚡ 快取加速</span>';
                 pageDescription.textContent = '公版 SQA/QC Degrade 問題統計分析（Degrade 用 created date, CCC issue 用 created date）';
                 refreshButton.onclick = refreshData;
             } else if (tabName === 'mttr') {
                 document.title = 'MTTR 指標分析儀表板';
-                pageTitle.innerHTML = '📈 MTTR 指標分析儀表板 <span class="fast-badge">⚡ 快取加速</span>';
+                pageTitle.innerHTML = '�� MTTR 指標分析儀表板 <span class="fast-badge">⚡ 快取加速</span>';
                 pageDescription.textContent = 'MTTR 指標分析（已解決: Resolved - Created, 未解決: Now - Created）';
                 refreshButton.onclick = refreshMttrData;
             }
@@ -1762,7 +1762,7 @@
                     plugins: {
                         tooltip: {
                             callbacks: {
-                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該週的 issues']
+                                afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該週的 issues']
                             }
                         },
                         legend: {
@@ -1868,7 +1868,7 @@
                         },
                         tooltip: {
                             callbacks: {
-                                afterBody: () => ['', '💡 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
+                                afterBody: () => ['', '�� 點擊可跳轉到 JIRA 查看該 Assignee 的 issues']
                             }
                         }
                     },
@@ -2076,7 +2076,7 @@
             if (currentFilters.end_date) params.append('end_date', currentFilters.end_date);
             if (currentFilters.owner) params.append('owner', currentFilters.owner);
             
-            console.log('📤 匯出 Excel 的過濾條件:', currentFilters);
+            console.log('�� 匯出 Excel 的過濾條件:', currentFilters);
             window.open('/api/export/excel?' + params.toString(), '_blank');
         }
         
@@ -2089,7 +2089,7 @@
             if (currentFilters.owner) params.append('owner', currentFilters.owner);
             params.append('chart_limit', chartLimit);  // 新增：圖表顯示筆數
             
-            console.log('📤 匯出 HTML 的過濾條件:', currentFilters, 'chartLimit:', chartLimit);
+            console.log('�� 匯出 HTML 的過濾條件:', currentFilters, 'chartLimit:', chartLimit);
             window.open('/api/export/html?' + params.toString(), '_blank');
         }
         
